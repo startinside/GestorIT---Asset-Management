@@ -1,3 +1,4 @@
+
 export enum UserRole {
   SUPER_ADMIN = 'superadmin_sistema', // Master
   ADMIN_EMPRESA = 'admin_empresa',
@@ -9,6 +10,12 @@ export enum UserRole {
 export type CompanyStatus = 'ATIVA' | 'SUSPENSA' | 'CANCELADA' | 'INADIMPLENTE';
 export type CompanyPlan = 'STARTER' | 'PRO' | 'ENTERPRISE';
 
+export interface CompanyLimits {
+  users: number;
+  branches: number;
+  equipments: number;
+}
+
 export interface Company {
   id: string;
   name: string;
@@ -18,11 +25,7 @@ export interface Company {
   status: CompanyStatus;
   plan: CompanyPlan;
   contactEmail?: string;
-  limits: {
-    users: number;
-    branches: number;
-    equipments: number;
-  };
+  limits: CompanyLimits;
   renewalDate: string;
   isOverdue: boolean; // Inadimplente
 }
@@ -83,7 +86,7 @@ export interface MaintenanceTicket {
   equipmentId?: string;
   title: string;
   description: string;
-  kanbanStatus: 'Aberto' | 'Em Análise' | 'Em Manutenção' | 'Aguardando Peça' | 'Concluído';
+  kanbanStatus: 'Aberto' | 'Em Manutenção' | 'Em Análise' | 'Aguardando Peça' | 'Concluído';
   priority: 'Baixa' | 'Média' | 'Alta' | 'Crítica';
   responsibleId: string;
   createdAt: string;

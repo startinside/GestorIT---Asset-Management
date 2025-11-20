@@ -1,3 +1,4 @@
+
 import { Company, Branch, User, UserRole, Equipment, EquipmentStatus, MaintenanceTicket, HistoryLog, Transaction } from '../types';
 
 export const MOCK_COMPANIES: Company[] = [
@@ -44,6 +45,7 @@ export const MOCK_TRANSACTIONS: Transaction[] = [
   { id: 'tr2', companyId: 'c1', date: '2023-09-01', type: 'MENSALIDADE', amount: 1500.00, paymentMethod: 'BOLETO', status: 'PAGO', description: 'Mensalidade Setembro/23' },
   { id: 'tr3', companyId: 'c2', date: '2023-10-15', type: 'MENSALIDADE', amount: 500.00, paymentMethod: 'PIX', status: 'VENCIDO', description: 'Mensalidade Outubro/23' },
   { id: 'tr4', companyId: 'c3', date: '2023-08-01', type: 'MENSALIDADE', amount: 150.00, paymentMethod: 'CARTAO', status: 'VENCIDO', description: 'Mensalidade Agosto/23' },
+  { id: 'tr5', companyId: 'c1', date: '2023-11-01', type: 'MENSALIDADE', amount: 1500.00, paymentMethod: 'BOLETO', status: 'PENDENTE', description: 'Mensalidade Novembro/23' },
 ];
 
 export const MOCK_BRANCHES: Branch[] = [
@@ -63,6 +65,8 @@ export const MOCK_STATUSES: EquipmentStatus[] = [
   { id: 's2', companyId: 'c1', name: 'Em Manutenção', color: 'bg-yellow-100 text-yellow-800', isSystemDefault: true },
   { id: 's3', companyId: 'c1', name: 'Parado/Estoque', color: 'bg-gray-100 text-gray-800', isSystemDefault: true },
   { id: 's4', companyId: 'c1', name: 'Sucata', color: 'bg-red-100 text-red-800', isSystemDefault: true },
+  // Estados genéricos para outras empresas
+  { id: 's5', companyId: 'global', name: 'Novo', color: 'bg-blue-100 text-blue-800', isSystemDefault: true },
 ];
 
 export const MOCK_EQUIPMENT: Equipment[] = [

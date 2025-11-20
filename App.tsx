@@ -1,5 +1,6 @@
+
 import React, { useState, createContext, useContext, useMemo } from 'react';
-import { HashRouter, Routes, Route, Link, useLocation, Navigate, Outlet, useNavigate } from 'react-router-dom';
+import { HashRouter, Routes, Route, Link, useLocation, Navigate, Outlet } from 'react-router-dom';
 import { 
   LayoutDashboard, 
   Monitor, 
@@ -19,8 +20,7 @@ import {
   Globe,
   Activity,
   Lock,
-  Unlock,
-  CreditCard
+  Unlock
 } from 'lucide-react';
 import { 
   MOCK_COMPANIES, 
@@ -194,11 +194,11 @@ const TenantSettings = () => {
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700">Razão Social</label>
-              <input type="text" value={currentCompany.name} disabled className="mt-1 block w-full rounded-md border-gray-300 bg-gray-50 p-2 text-sm" />
+              <input type="text" value={currentCompany.name} disabled className="mt-1 block w-full rounded-md border-gray-300 bg-gray-50 p-2 text-sm cursor-not-allowed" />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700">CNPJ</label>
-              <input type="text" value={currentCompany.cnpj} disabled className="mt-1 block w-full rounded-md border-gray-300 bg-gray-50 p-2 text-sm" />
+              <input type="text" value={currentCompany.cnpj} disabled className="mt-1 block w-full rounded-md border-gray-300 bg-gray-50 p-2 text-sm cursor-not-allowed" />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700">Plano Atual</label>
@@ -213,11 +213,11 @@ const TenantSettings = () => {
           <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
             <Globe size={20} className="text-indigo-600" /> Categorias & Estados
           </h3>
-          <p className="text-sm text-gray-500 mb-4">Gerencie as categorias de equipamentos e estados personalizados.</p>
-          <button className="w-full bg-white border border-gray-300 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-50 text-sm font-medium">
+          <p className="text-sm text-gray-500 mb-4">Gerencie as categorias de equipamentos e estados personalizados para sua organização.</p>
+          <button className="w-full bg-white border border-gray-300 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-50 text-sm font-medium transition-colors mb-2">
             Gerenciar Estados de Equipamento
           </button>
-          <button className="w-full mt-3 bg-white border border-gray-300 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-50 text-sm font-medium">
+          <button className="w-full bg-white border border-gray-300 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-50 text-sm font-medium transition-colors">
             Gerenciar Categorias
           </button>
         </div>
@@ -227,21 +227,25 @@ const TenantSettings = () => {
 };
 
 const Dashboard = () => {
-  const { equipment, tickets } = useAppContext();
+  const { equipment, tickets, currentCompany } = useAppContext();
+
+  // Filtra equipamentos apenas da empresa atual
+  const companyEquipment = equipment.filter(e => e.companyId === currentCompany.id);
+  const companyTickets = tickets.filter(t => t.companyId === currentCompany.id);
 
   const stats = [
-    { label: 'Total Equipamentos', value: equipment.length, color: 'bg-blue-500' },
-    { label: 'Em Manutenção', value: equipment.filter(e => e.statusId === 's2').length, color: 'bg-yellow-500' },
-    { label: 'Disponíveis', value: equipment.filter(e => e.statusId === 's1').length, color: 'bg-green-500' },
-    { label: 'Chamados Abertos', value: tickets.filter(t => t.kanbanStatus !== 'Concluído').length, color: 'bg-indigo-500' },
+    { label: 'Total Equipamentos', value: companyEquipment.length, color: 'bg-blue-500' },
+    { label: 'Em Manutenção', value: companyEquipment.filter(e => e.statusId === 's2').length, color: 'bg-yellow-500' },
+    { label: 'Disponíveis', value: companyEquipment.filter(e => e.statusId === 's1').length, color: 'bg-green-500' },
+    { label: 'Chamados Abertos', value: companyTickets.filter(t => t.kanbanStatus !== 'Concluído').length, color: 'bg-indigo-500' },
   ];
 
   const dataStatus = [
-    { name: 'Funcionando', value: equipment.filter(e => e.statusId === 's1').length, color: '#10B981' },
-    { name: 'Manutenção', value: equipment.filter(e => e.statusId === 's2').length, color: '#F59E0B' },
-    { name: 'Parado', value: equipment.filter(e => e.statusId === 's3').length, color: '#6B7280' },
-    { name: 'Sucata', value: equipment.filter(e => e.statusId === 's4').length, color: '#EF4444' },
-  ];
+    { name: 'Funcionando', value: companyEquipment.filter(e => e.statusId === 's1').length, color: '#10B981' },
+    { name: 'Manutenção', value: companyEquipment.filter(e => e.statusId === 's2').length, color: '#F59E0B' },
+    { name: 'Parado', value: companyEquipment.filter(e => e.statusId === 's3').length, color: '#6B7280' },
+    { name: 'Sucata', value: companyEquipment.filter(e => e.statusId === 's4').length, color: '#EF4444' },
+  ].filter(item => item.value > 0);
 
   const dataTimeline = [
     { name: 'Seg', chamados: 2 },
@@ -296,7 +300,7 @@ const Dashboard = () => {
                 </PieChart>
              </ResponsiveContainer>
           </div>
-          <div className="flex justify-center gap-4 text-sm">
+          <div className="flex justify-center gap-4 text-sm flex-wrap">
             {dataStatus.map((s) => (
               <div key={s.name} className="flex items-center gap-1">
                 <div className="w-3 h-3 rounded-full" style={{backgroundColor: s.color}}></div>
@@ -330,7 +334,10 @@ const EquipmentList = () => {
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
 
+  // Filtra primeiro pela empresa, depois pela busca local
   const filteredEquipment = equipment.filter(eq => {
+    if (eq.companyId !== currentCompany.id) return false;
+
     const matchesSearch = 
       eq.type.toLowerCase().includes(search.toLowerCase()) ||
       eq.brand.toLowerCase().includes(search.toLowerCase()) ||
@@ -378,7 +385,7 @@ const EquipmentList = () => {
             onChange={e => setFilterStatus(e.target.value)}
            >
              <option value="">Todos os Status</option>
-             {MOCK_STATUSES.filter(s => s.companyId === currentCompany.id).map(s => (
+             {MOCK_STATUSES.filter(s => s.companyId === currentCompany.id || s.companyId === 'global').map(s => (
                <option key={s.id} value={s.id}>{s.name}</option>
              ))}
            </select>
@@ -411,7 +418,7 @@ const EquipmentList = () => {
                     <div className="text-gray-500 text-xs">{eq.brand} {eq.model}</div>
                   </td>
                   <td className="px-6 py-4 font-mono text-gray-600 text-xs">{eq.serialNumber}</td>
-                  <td className="px-6 py-4 text-gray-600">{branch?.name}</td>
+                  <td className="px-6 py-4 text-gray-600">{branch?.name || 'N/A'}</td>
                   <td className="px-6 py-4">
                     {getStatusBadge(eq.statusId)}
                   </td>
@@ -431,7 +438,7 @@ const EquipmentList = () => {
 };
 
 const MaintenanceKanban = () => {
-  const { tickets, setTickets, equipment } = useAppContext();
+  const { tickets, setTickets, equipment, currentCompany } = useAppContext();
   
   const columns = [
     { id: 'Aberto', title: 'Aberto', color: 'border-t-4 border-blue-500' },
@@ -465,6 +472,8 @@ const MaintenanceKanban = () => {
     }
   };
 
+  const companyTickets = tickets.filter(t => t.companyId === currentCompany.id);
+
   return (
     <div className="p-8 h-[calc(100vh-64px)] flex flex-col">
       <div className="flex justify-between items-center mb-6">
@@ -493,7 +502,7 @@ const MaintenanceKanban = () => {
             <div className="p-4 font-semibold text-gray-700 flex justify-between items-center sticky top-0 bg-gray-100 rounded-t-xl z-10">
               <span>{col.title}</span>
               <span className="bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full text-xs">
-                {tickets.filter(t => {
+                {companyTickets.filter(t => {
                     if(col.id === 'Em Manutenção') return ['Em Manutenção', 'Em Análise', 'Aguardando Peça'].includes(t.kanbanStatus);
                     return t.kanbanStatus === col.id;
                 }).length}
@@ -501,7 +510,7 @@ const MaintenanceKanban = () => {
             </div>
             
             <div className="p-3 space-y-3 overflow-y-auto scrollbar-hide flex-1">
-              {tickets.filter(t => {
+              {companyTickets.filter(t => {
                   if(col.id === 'Em Manutenção') return ['Em Manutenção', 'Em Análise', 'Aguardando Peça'].includes(t.kanbanStatus);
                   return t.kanbanStatus === col.id;
               }).map(ticket => {
