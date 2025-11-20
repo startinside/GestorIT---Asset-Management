@@ -1,5 +1,5 @@
 import React, { useState, createContext, useContext, useMemo } from 'react';
-import { HashRouter, Routes, Route, Link, useLocation, Navigate, Outlet } from 'react-router-dom';
+import { HashRouter, Routes, Route, Link, useLocation, Navigate, Outlet, useNavigate } from 'react-router-dom';
 import { 
   LayoutDashboard, 
   Monitor, 
@@ -13,8 +13,14 @@ import {
   Filter, 
   Plus,
   ChevronRight,
-  History,
-  Calendar
+  Calendar,
+  ShieldAlert,
+  DollarSign,
+  Globe,
+  Activity,
+  Lock,
+  Unlock,
+  CreditCard
 } from 'lucide-react';
 import { 
   MOCK_COMPANIES, 
@@ -22,10 +28,11 @@ import {
   MOCK_EQUIPMENT, 
   MOCK_STATUSES, 
   MOCK_BRANCHES,
-  MOCK_TICKETS
+  MOCK_TICKETS,
+  MOCK_TRANSACTIONS
 } from './services/mockData';
-import { Company, User, Equipment, EquipmentStatus, MaintenanceTicket } from './types';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { Company, User, Equipment, MaintenanceTicket, Transaction } from './types';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from 'recharts';
 
 // --- CONTEXT ---
 interface AppContextType {
@@ -36,6 +43,9 @@ interface AppContextType {
   setEquipment: React.Dispatch<React.SetStateAction<Equipment[]>>;
   tickets: MaintenanceTicket[];
   setTickets: React.Dispatch<React.SetStateAction<MaintenanceTicket[]>>;
+  companies: Company[];
+  setCompanies: React.Dispatch<React.SetStateAction<Company[]>>;
+  transactions: Transaction[];
 }
 
 const AppContext = createContext<AppContextType | null>(null);
@@ -46,9 +56,24 @@ const useAppContext = () => {
   return context;
 };
 
-// --- COMPONENTS ---
+// --- SHARED COMPONENTS ---
 
-const SidebarItem = ({ to, icon: Icon, label, active }: { to: string; icon: any; label: string; active: boolean }) => (
+const SidebarItem = ({ to, icon: Icon, label, active, onClick }: { to: string; icon: any; label: string; active: boolean, onClick?: () => void }) => (
+  <Link 
+    to={to} 
+    onClick={onClick}
+    className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
+      active 
+        ? 'bg-opacity-10 bg-white text-white font-medium shadow-sm' // Style for dark sidebar (Master)
+        : 'text-gray-400 hover:text-white hover:bg-gray-800'
+    }`}
+  >
+    <Icon size={20} />
+    <span>{label}</span>
+  </Link>
+);
+
+const TenantSidebarItem = ({ to, icon: Icon, label, active }: { to: string; icon: any; label: string; active: boolean }) => (
   <Link 
     to={to} 
     className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
@@ -62,7 +87,9 @@ const SidebarItem = ({ to, icon: Icon, label, active }: { to: string; icon: any;
   </Link>
 );
 
-const Sidebar = () => {
+// --- TENANT COMPONENTS (CLIENTE) ---
+
+const TenantSidebar = () => {
   const location = useLocation();
   const { currentCompany } = useAppContext();
 
@@ -73,23 +100,26 @@ const Sidebar = () => {
           <Monitor className="h-8 w-8" />
           <span>GestorIT</span>
         </div>
-        <div className="mt-2 text-xs text-gray-400 uppercase tracking-wider font-semibold">
+        <div className="mt-2 text-xs text-gray-400 uppercase tracking-wider font-semibold truncate">
           {currentCompany.name}
         </div>
       </div>
 
       <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
-        <SidebarItem to="/" icon={LayoutDashboard} label="Dashboard" active={location.pathname === '/'} />
-        <SidebarItem to="/equipamentos" icon={Monitor} label="Equipamentos" active={location.pathname.startsWith('/equipamentos')} />
-        <SidebarItem to="/manutencao" icon={Wrench} label="Manutenção" active={location.pathname.startsWith('/manutencao')} />
-        <SidebarItem to="/usuarios" icon={Users} label="Usuários" active={location.pathname === '/usuarios'} />
+        <TenantSidebarItem to="/" icon={LayoutDashboard} label="Dashboard" active={location.pathname === '/'} />
+        <TenantSidebarItem to="/equipamentos" icon={Monitor} label="Equipamentos" active={location.pathname.startsWith('/equipamentos')} />
+        <TenantSidebarItem to="/manutencao" icon={Wrench} label="Manutenção" active={location.pathname.startsWith('/manutencao')} />
+        <TenantSidebarItem to="/usuarios" icon={Users} label="Usuários" active={location.pathname === '/usuarios'} />
         <div className="pt-4 pb-2">
           <div className="text-xs font-semibold text-gray-400 uppercase px-4 mb-2">Administração</div>
-          <SidebarItem to="/configuracoes" icon={Settings} label="Configurações" active={location.pathname === '/configuracoes'} />
+          <TenantSidebarItem to="/configuracoes" icon={Settings} label="Configurações" active={location.pathname === '/configuracoes'} />
         </div>
       </nav>
-
+      
       <div className="p-4 border-t border-gray-100">
+        <Link to="/master" className="flex items-center gap-2 px-4 py-2 mb-2 text-xs font-medium text-gray-500 bg-gray-100 rounded hover:bg-gray-200 justify-center">
+          <ShieldAlert size={12} /> Simular Painel Master
+        </Link>
         <button className="flex items-center gap-3 px-4 py-3 text-red-600 hover:bg-red-50 rounded-lg w-full transition-colors">
           <LogOut size={20} />
           <span>Sair</span>
@@ -99,8 +129,8 @@ const Sidebar = () => {
   );
 };
 
-const Header = () => {
-  const { currentUser, currentCompany, setCurrentCompany } = useAppContext();
+const TenantHeader = () => {
+  const { currentUser, currentCompany, setCurrentCompany, companies } = useAppContext();
 
   return (
     <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-6 fixed top-0 right-0 left-64 z-10">
@@ -110,11 +140,11 @@ const Header = () => {
             className="appearance-none bg-gray-50 border border-gray-200 text-gray-700 py-2 pl-4 pr-10 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm font-medium cursor-pointer"
             value={currentCompany.id}
             onChange={(e) => {
-              const company = MOCK_COMPANIES.find(c => c.id === e.target.value);
+              const company = companies.find(c => c.id === e.target.value);
               if(company) setCurrentCompany(company);
             }}
           >
-            {MOCK_COMPANIES.map(c => (
+            {companies.filter(c => c.active).map(c => (
               <option key={c.id} value={c.id}>{c.name}</option>
             ))}
           </select>
@@ -146,7 +176,55 @@ const Header = () => {
   );
 };
 
-// --- PAGES ---
+const TenantSettings = () => {
+  const { currentCompany } = useAppContext();
+
+  return (
+    <div className="p-8 space-y-8">
+      <div className="border-b border-gray-200 pb-5">
+        <h1 className="text-2xl font-bold text-gray-900">Configurações</h1>
+        <p className="text-gray-500 mt-1">Gerencie as preferências da empresa {currentCompany.name}</p>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+            <Building2 size={20} className="text-indigo-600" /> Dados da Empresa
+          </h3>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Razão Social</label>
+              <input type="text" value={currentCompany.name} disabled className="mt-1 block w-full rounded-md border-gray-300 bg-gray-50 p-2 text-sm" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">CNPJ</label>
+              <input type="text" value={currentCompany.cnpj} disabled className="mt-1 block w-full rounded-md border-gray-300 bg-gray-50 p-2 text-sm" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Plano Atual</label>
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800 mt-1">
+                {currentCompany.plan}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+            <Globe size={20} className="text-indigo-600" /> Categorias & Estados
+          </h3>
+          <p className="text-sm text-gray-500 mb-4">Gerencie as categorias de equipamentos e estados personalizados.</p>
+          <button className="w-full bg-white border border-gray-300 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-50 text-sm font-medium">
+            Gerenciar Estados de Equipamento
+          </button>
+          <button className="w-full mt-3 bg-white border border-gray-300 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-50 text-sm font-medium">
+            Gerenciar Categorias
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const Dashboard = () => {
   const { equipment, tickets } = useAppContext();
@@ -265,7 +343,6 @@ const EquipmentList = () => {
   const getStatusBadge = (statusId: string) => {
     const status = MOCK_STATUSES.find(s => s.id === statusId);
     if (!status) return null;
-    // Extracting colors from class string is tricky in JS without parsing, assuming structure
     return (
       <span className={`px-2 py-1 rounded-full text-xs font-medium ${status.color}`}>
         {status.name}
@@ -346,13 +423,6 @@ const EquipmentList = () => {
                 </tr>
               );
             })}
-            {filteredEquipment.length === 0 && (
-              <tr>
-                <td colSpan={6} className="px-6 py-8 text-center text-gray-500">
-                  Nenhum equipamento encontrado.
-                </td>
-              </tr>
-            )}
           </tbody>
         </table>
       </div>
@@ -471,14 +541,292 @@ const MaintenanceKanban = () => {
   );
 };
 
-// --- MAIN APP LAYOUT ---
+// --- MASTER COMPONENTS (SAAS ADMIN) ---
 
-const Layout = () => {
+const MasterSidebar = () => {
+  const location = useLocation();
+
+  return (
+    <div className="w-64 bg-gray-900 border-r border-gray-800 h-screen flex flex-col fixed left-0 top-0 z-10 text-white">
+      <div className="p-6 border-b border-gray-800">
+        <div className="flex items-center gap-2 text-indigo-400 font-bold text-xl">
+          <ShieldAlert className="h-8 w-8" />
+          <span>MasterAdmin</span>
+        </div>
+        <div className="mt-2 text-xs text-gray-500 uppercase tracking-wider font-semibold">
+          Painel do Sistema
+        </div>
+      </div>
+
+      <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
+        <SidebarItem to="/master" icon={Activity} label="Dashboard SaaS" active={location.pathname === '/master'} />
+        <SidebarItem to="/master/empresas" icon={Building2} label="Empresas" active={location.pathname.startsWith('/master/empresas')} />
+        <SidebarItem to="/master/financeiro" icon={DollarSign} label="Financeiro" active={location.pathname.startsWith('/master/financeiro')} />
+        <div className="pt-4 pb-2">
+          <div className="text-xs font-semibold text-gray-500 uppercase px-4 mb-2">Globais</div>
+          <SidebarItem to="/master/categorias" icon={Globe} label="Categorias Globais" active={location.pathname === '/master/categorias'} />
+          <SidebarItem to="/master/usuarios" icon={Users} label="Usuários Master" active={location.pathname === '/master/usuarios'} />
+        </div>
+      </nav>
+
+      <div className="p-4 border-t border-gray-800">
+        <Link to="/" className="flex items-center gap-2 px-4 py-2 mb-2 text-xs font-medium text-gray-400 bg-gray-800 rounded hover:bg-gray-700 justify-center">
+           <LogOut size={12} /> Voltar para Tenant
+        </Link>
+        <div className="flex items-center gap-3 px-4 py-2">
+           <img 
+            src="https://ui-avatars.com/api/?name=Master+Admin&background=000&color=fff"
+            alt="Master"
+            className="h-8 w-8 rounded-full ring-2 ring-indigo-500"
+           />
+           <div className="text-xs">
+             <div className="font-bold">Super Admin</div>
+             <div className="text-gray-500">root@system</div>
+           </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const MasterDashboard = () => {
+  const { companies, transactions } = useAppContext();
+
+  const totalMRR = transactions
+    .filter(t => t.type === 'MENSALIDADE' && t.status === 'PAGO')
+    .reduce((acc, t) => acc + t.amount, 0);
+  
+  const inadimplentes = companies.filter(c => c.isOverdue).length;
+
+  const stats = [
+    { label: 'Total Empresas', value: companies.length, color: 'bg-indigo-500', icon: Building2 },
+    { label: 'MRR (Estimado)', value: `R$ ${totalMRR.toLocaleString('pt-BR')}`, color: 'bg-green-500', icon: DollarSign },
+    { label: 'Inadimplentes', value: inadimplentes, color: 'bg-red-500', icon: ShieldAlert },
+    { label: 'Transações Pendentes', value: transactions.filter(t => t.status === 'PENDENTE' || t.status === 'VENCIDO').length, color: 'bg-yellow-500', icon: Activity },
+  ];
+
+  // Simple Chart Data
+  const revData = [
+    { name: 'Jul', value: 12000 },
+    { name: 'Ago', value: 13500 },
+    { name: 'Set', value: 13000 },
+    { name: 'Out', value: 15200 },
+  ];
+
+  return (
+    <div className="p-8 space-y-8">
+      <div className="flex justify-between items-end">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Painel Master</h1>
+          <p className="text-gray-500 mt-1">Gestão global do ecossistema SaaS</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        {stats.map((stat, i) => (
+          <div key={i} className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+            <div className="flex justify-between items-start">
+              <div>
+                <p className="text-sm font-medium text-gray-500 uppercase tracking-wide">{stat.label}</p>
+                <h3 className="text-2xl font-bold text-gray-900 mt-2">{stat.value}</h3>
+              </div>
+              <div className={`p-3 rounded-lg ${stat.color} bg-opacity-10`}>
+                <stat.icon size={24} className={`text-${stat.color.replace('bg-', '')}-600`} color="black" />
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+          <h3 className="text-lg font-semibold text-gray-900 mb-6">Crescimento de Receita</h3>
+          <div className="h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={revData}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="name" axisLine={false} tickLine={false} />
+                <YAxis axisLine={false} tickLine={false} />
+                <Tooltip />
+                <Line type="monotone" dataKey="value" stroke="#4F46E5" strokeWidth={2} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Empresas Recentes</h3>
+          <div className="space-y-4">
+            {companies.slice(0, 3).map(company => (
+              <div key={company.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600 font-bold">
+                    {company.name.substring(0, 2).toUpperCase()}
+                  </div>
+                  <div>
+                    <div className="font-medium text-gray-900">{company.name}</div>
+                    <div className="text-xs text-gray-500">{company.plan} Plan</div>
+                  </div>
+                </div>
+                <span className={`px-2 py-1 rounded-full text-xs font-medium ${company.active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                  {company.status}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const MasterCompanyList = () => {
+  const { companies, setCompanies } = useAppContext();
+
+  const toggleStatus = (id: string) => {
+    setCompanies(prev => prev.map(c => {
+      if (c.id === id) {
+        const newActive = !c.active;
+        return { ...c, active: newActive, status: newActive ? 'ATIVA' : 'SUSPENSA' };
+      }
+      return c;
+    }));
+  };
+
+  return (
+    <div className="p-8 space-y-6">
+      <div className="flex justify-between items-center">
+        <h1 className="text-2xl font-bold text-gray-900">Empresas Cadastradas</h1>
+        <button className="bg-indigo-600 text-white px-4 py-2 rounded-lg flex items-center gap-2">
+          <Plus size={16} /> Nova Empresa
+        </button>
+      </div>
+
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+        <table className="w-full text-sm text-left">
+          <thead className="bg-gray-50 text-gray-500 font-medium uppercase tracking-wider text-xs">
+            <tr>
+              <th className="px-6 py-3">Empresa</th>
+              <th className="px-6 py-3">Plano</th>
+              <th className="px-6 py-3">Limites (Usu/Fil/Eq)</th>
+              <th className="px-6 py-3">Status</th>
+              <th className="px-6 py-3">Inadimplência</th>
+              <th className="px-6 py-3 text-right">Ações</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {companies.map(company => (
+              <tr key={company.id} className="hover:bg-gray-50">
+                <td className="px-6 py-4">
+                  <div className="font-medium text-gray-900">{company.name}</div>
+                  <div className="text-xs text-gray-500">{company.cnpj}</div>
+                </td>
+                <td className="px-6 py-4">
+                  <span className="px-2 py-1 bg-blue-50 text-blue-700 rounded-md text-xs font-bold border border-blue-100">
+                    {company.plan}
+                  </span>
+                </td>
+                <td className="px-6 py-4 text-gray-600">
+                  {company.limits.users} / {company.limits.branches} / {company.limits.equipments}
+                </td>
+                <td className="px-6 py-4">
+                   <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                     company.status === 'ATIVA' ? 'bg-green-100 text-green-800' : 
+                     company.status === 'SUSPENSA' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'
+                   }`}>
+                     {company.status}
+                   </span>
+                </td>
+                <td className="px-6 py-4">
+                  {company.isOverdue ? (
+                    <span className="flex items-center gap-1 text-red-600 font-bold text-xs">
+                      <ShieldAlert size={14} /> SIM
+                    </span>
+                  ) : (
+                    <span className="text-green-600 text-xs font-medium">Regular</span>
+                  )}
+                </td>
+                <td className="px-6 py-4 text-right flex justify-end gap-2">
+                  <button 
+                    onClick={() => toggleStatus(company.id)}
+                    className={`p-1.5 rounded hover:bg-gray-100 border border-gray-200 ${company.active ? 'text-red-600' : 'text-green-600'}`} 
+                    title={company.active ? "Suspender" : "Ativar"}
+                  >
+                    {company.active ? <Lock size={16} /> : <Unlock size={16} />}
+                  </button>
+                  <button className="p-1.5 rounded hover:bg-gray-100 border border-gray-200 text-gray-600" title="Editar">
+                    <Settings size={16} />
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+};
+
+const MasterFinance = () => {
+  const { transactions, companies } = useAppContext();
+
+  return (
+    <div className="p-8 space-y-6">
+      <div className="flex justify-between items-center">
+        <h1 className="text-2xl font-bold text-gray-900">Financeiro</h1>
+        <button className="bg-white border border-gray-200 text-gray-700 px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-gray-50">
+          <Plus size={16} /> Lançamento Manual
+        </button>
+      </div>
+
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+         <table className="w-full text-sm text-left">
+          <thead className="bg-gray-50 text-gray-500 font-medium uppercase tracking-wider text-xs">
+            <tr>
+              <th className="px-6 py-3">Data</th>
+              <th className="px-6 py-3">Empresa</th>
+              <th className="px-6 py-3">Descrição</th>
+              <th className="px-6 py-3">Valor</th>
+              <th className="px-6 py-3">Método</th>
+              <th className="px-6 py-3">Status</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {transactions.map(t => {
+              const comp = companies.find(c => c.id === t.companyId);
+              return (
+                <tr key={t.id} className="hover:bg-gray-50">
+                  <td className="px-6 py-4 text-gray-600">{new Date(t.date).toLocaleDateString('pt-BR')}</td>
+                  <td className="px-6 py-4 font-medium text-gray-900">{comp?.name || 'N/A'}</td>
+                  <td className="px-6 py-4 text-gray-500">{t.description}</td>
+                  <td className="px-6 py-4 font-mono font-medium">R$ {t.amount.toFixed(2)}</td>
+                  <td className="px-6 py-4 text-xs uppercase text-gray-500">{t.paymentMethod}</td>
+                  <td className="px-6 py-4">
+                    <span className={`px-2 py-1 rounded text-xs font-bold ${
+                      t.status === 'PAGO' ? 'bg-green-100 text-green-800' :
+                      t.status === 'VENCIDO' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'
+                    }`}>
+                      {t.status}
+                    </span>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+};
+
+// --- LAYOUTS ---
+
+const TenantLayout = () => {
   return (
     <div className="min-h-screen flex bg-gray-50/50">
-      <Sidebar />
+      <TenantSidebar />
       <div className="flex-1 flex flex-col ml-64">
-        <Header />
+        <TenantHeader />
         <main className="flex-1 pt-16 overflow-x-hidden">
           <Outlet />
         </main>
@@ -487,12 +835,27 @@ const Layout = () => {
   );
 };
 
+const MasterLayout = () => {
+  return (
+    <div className="min-h-screen flex bg-gray-100">
+      <MasterSidebar />
+      <div className="flex-1 flex flex-col ml-64 overflow-x-hidden">
+        <Outlet />
+      </div>
+    </div>
+  );
+};
+
+// --- APP ENTRY POINT ---
+
 const App = () => {
   // Initialize State with Mock Data
   const [currentCompany, setCurrentCompany] = useState<Company>(MOCK_COMPANIES[0]);
   const [currentUser] = useState<User>(MOCK_USERS[0]);
   const [equipment, setEquipment] = useState<Equipment[]>(MOCK_EQUIPMENT);
   const [tickets, setTickets] = useState<MaintenanceTicket[]>(MOCK_TICKETS);
+  const [companies, setCompanies] = useState<Company[]>(MOCK_COMPANIES);
+  const [transactions] = useState<Transaction[]>(MOCK_TRANSACTIONS);
 
   const contextValue = useMemo(() => ({
     currentUser,
@@ -501,19 +864,34 @@ const App = () => {
     equipment,
     setEquipment,
     tickets,
-    setTickets
-  }), [currentUser, currentCompany, equipment, tickets]);
+    setTickets,
+    companies,
+    setCompanies,
+    transactions
+  }), [currentUser, currentCompany, equipment, tickets, companies, transactions]);
 
   return (
     <AppContext.Provider value={contextValue}>
       <HashRouter>
         <Routes>
-          <Route element={<Layout />}>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/equipamentos" element={<EquipmentList />} />
-            <Route path="/manutencao" element={<MaintenanceKanban />} />
+          {/* Tenant (Client) Routes */}
+          <Route path="/" element={<TenantLayout />}>
+            <Route index element={<Dashboard />} />
+            <Route path="equipamentos" element={<EquipmentList />} />
+            <Route path="manutencao" element={<MaintenanceKanban />} />
+            <Route path="usuarios" element={<div className="p-8 text-gray-500">Gestão de Usuários (Demo)</div>} />
+            <Route path="configuracoes" element={<TenantSettings />} />
           </Route>
-          {/* Placeholder routes for demonstration */}
+
+          {/* Master (SaaS Admin) Routes */}
+          <Route path="/master" element={<MasterLayout />}>
+             <Route index element={<MasterDashboard />} />
+             <Route path="empresas" element={<MasterCompanyList />} />
+             <Route path="financeiro" element={<MasterFinance />} />
+             <Route path="categorias" element={<div className="p-8">Gestão de Categorias Globais (Em breve)</div>} />
+             <Route path="usuarios" element={<div className="p-8">Gestão de Usuários Master (Em breve)</div>} />
+          </Route>
+
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </HashRouter>

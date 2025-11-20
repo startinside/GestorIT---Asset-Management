@@ -1,5 +1,5 @@
 {
-  "name": "Copy of GestorIT - Asset Management",
+  "name": "GestorIT - Asset Management",
   "description": "A complete IT Asset Management frontend with Multi-tenant support, Equipment Tracking, Kanban Maintenance, and Timeline visualization. Designed to interface with a Python/Flask backend.",
   "requestFramePermissions": []
 }

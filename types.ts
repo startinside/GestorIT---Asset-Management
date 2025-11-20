@@ -1,16 +1,41 @@
 export enum UserRole {
-  SUPER_ADMIN = 'superadmin_sistema',
+  SUPER_ADMIN = 'superadmin_sistema', // Master
   ADMIN_EMPRESA = 'admin_empresa',
   GESTOR_TI = 'gestor_ti',
   TECNICO = 'tecnico',
   LEITURA = 'leitura'
 }
 
+export type CompanyStatus = 'ATIVA' | 'SUSPENSA' | 'CANCELADA' | 'INADIMPLENTE';
+export type CompanyPlan = 'STARTER' | 'PRO' | 'ENTERPRISE';
+
 export interface Company {
   id: string;
   name: string;
   cnpj: string;
   active: boolean;
+  // Campos SaaS Master
+  status: CompanyStatus;
+  plan: CompanyPlan;
+  contactEmail?: string;
+  limits: {
+    users: number;
+    branches: number;
+    equipments: number;
+  };
+  renewalDate: string;
+  isOverdue: boolean; // Inadimplente
+}
+
+export interface Transaction {
+  id: string;
+  companyId: string;
+  date: string;
+  type: 'MENSALIDADE' | 'RENOVACAO' | 'MULTA' | 'AJUSTE';
+  amount: number;
+  paymentMethod: 'BOLETO' | 'PIX' | 'CARTAO' | 'MANUAL';
+  status: 'PAGO' | 'PENDENTE' | 'VENCIDO';
+  description: string;
 }
 
 export interface Branch {
@@ -30,7 +55,7 @@ export interface User {
 
 export interface EquipmentStatus {
   id: string;
-  companyId: string;
+  companyId: string; // Se for 'global', é do sistema master
   name: string;
   color: string; // hex or tailwind class mapping
   isSystemDefault: boolean;

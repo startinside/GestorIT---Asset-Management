@@ -1,8 +1,49 @@
-import { Company, Branch, User, UserRole, Equipment, EquipmentStatus, MaintenanceTicket, HistoryLog } from '../types';
+import { Company, Branch, User, UserRole, Equipment, EquipmentStatus, MaintenanceTicket, HistoryLog, Transaction } from '../types';
 
 export const MOCK_COMPANIES: Company[] = [
-  { id: 'c1', name: 'TechSolutions Corp', cnpj: '12.345.678/0001-90', active: true },
-  { id: 'c2', name: 'Demo Retail Ltda', cnpj: '98.765.432/0001-10', active: true },
+  { 
+    id: 'c1', 
+    name: 'TechSolutions Corp', 
+    cnpj: '12.345.678/0001-90', 
+    active: true,
+    status: 'ATIVA',
+    plan: 'ENTERPRISE',
+    contactEmail: 'financeiro@techsolutions.com',
+    limits: { users: 50, branches: 10, equipments: 1000 },
+    renewalDate: '2023-12-01',
+    isOverdue: false
+  },
+  { 
+    id: 'c2', 
+    name: 'Demo Retail Ltda', 
+    cnpj: '98.765.432/0001-10', 
+    active: true,
+    status: 'INADIMPLENTE',
+    plan: 'PRO',
+    contactEmail: 'contato@demoretail.com',
+    limits: { users: 10, branches: 3, equipments: 200 },
+    renewalDate: '2023-10-15',
+    isOverdue: true
+  },
+  { 
+    id: 'c3', 
+    name: 'Startup Inovadora', 
+    cnpj: '11.222.333/0001-00', 
+    active: false,
+    status: 'SUSPENSA',
+    plan: 'STARTER',
+    contactEmail: 'admin@startup.com',
+    limits: { users: 3, branches: 1, equipments: 50 },
+    renewalDate: '2023-09-01',
+    isOverdue: true
+  },
+];
+
+export const MOCK_TRANSACTIONS: Transaction[] = [
+  { id: 'tr1', companyId: 'c1', date: '2023-10-01', type: 'MENSALIDADE', amount: 1500.00, paymentMethod: 'BOLETO', status: 'PAGO', description: 'Mensalidade Outubro/23' },
+  { id: 'tr2', companyId: 'c1', date: '2023-09-01', type: 'MENSALIDADE', amount: 1500.00, paymentMethod: 'BOLETO', status: 'PAGO', description: 'Mensalidade Setembro/23' },
+  { id: 'tr3', companyId: 'c2', date: '2023-10-15', type: 'MENSALIDADE', amount: 500.00, paymentMethod: 'PIX', status: 'VENCIDO', description: 'Mensalidade Outubro/23' },
+  { id: 'tr4', companyId: 'c3', date: '2023-08-01', type: 'MENSALIDADE', amount: 150.00, paymentMethod: 'CARTAO', status: 'VENCIDO', description: 'Mensalidade Agosto/23' },
 ];
 
 export const MOCK_BRANCHES: Branch[] = [
@@ -12,8 +53,9 @@ export const MOCK_BRANCHES: Branch[] = [
 ];
 
 export const MOCK_USERS: User[] = [
-  { id: 'u1', name: 'Admin Demo', email: 'admin@example.com', role: UserRole.SUPER_ADMIN, avatarUrl: 'https://picsum.photos/200' },
+  { id: 'u1', name: 'Admin Demo', email: 'admin@example.com', role: UserRole.ADMIN_EMPRESA, avatarUrl: 'https://picsum.photos/200' },
   { id: 'u2', name: 'João Técnico', email: 'joao@tech.com', role: UserRole.TECNICO },
+  { id: 'u99', name: 'Master SuperAdmin', email: 'master@sistema.com', role: UserRole.SUPER_ADMIN, avatarUrl: 'https://ui-avatars.com/api/?name=Master+Admin&background=000&color=fff' },
 ];
 
 export const MOCK_STATUSES: EquipmentStatus[] = [
