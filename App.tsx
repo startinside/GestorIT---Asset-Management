@@ -1,5 +1,5 @@
 
-import React, { useState, createContext, useContext, useMemo } from 'react';
+import React, { useState, createContext, useContext, useMemo, useEffect } from 'react';
 import { HashRouter, Routes, Route, Link, useLocation, Navigate, Outlet } from 'react-router-dom';
 import { 
   LayoutDashboard, 
@@ -20,24 +20,20 @@ import {
   Globe,
   Activity,
   Lock,
-  Unlock
+  Unlock,
+  Loader2
 } from 'lucide-react';
-import { 
-  MOCK_COMPANIES, 
-  MOCK_USERS, 
-  MOCK_EQUIPMENT, 
-  MOCK_STATUSES, 
-  MOCK_BRANCHES,
-  MOCK_TICKETS,
-  MOCK_TRANSACTIONS
-} from './services/mockData';
-import { Company, User, Equipment, MaintenanceTicket, Transaction } from './types';
+import { Company, User, Equipment, MaintenanceTicket, Transaction, EquipmentStatus, Branch } from './types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from 'recharts';
+
+// Services
+import { masterApi } from './services/masterApi';
+import { tenantApi } from './services/tenantApi';
 
 // --- CONTEXT ---
 interface AppContextType {
-  currentUser: User;
-  currentCompany: Company;
+  currentUser: User | null;
+  currentCompany: Company | null;
   setCurrentCompany: (c: Company) => void;
   equipment: Equipment[];
   setEquipment: React.Dispatch<React.SetStateAction<Equipment[]>>;
@@ -46,6 +42,9 @@ interface AppContextType {
   companies: Company[];
   setCompanies: React.Dispatch<React.SetStateAction<Company[]>>;
   transactions: Transaction[];
+  statuses: EquipmentStatus[];
+  branches: Branch[];
+  isLoading: boolean;
 }
 
 const AppContext = createContext<AppContextType | null>(null);
@@ -93,6 +92,8 @@ const TenantSidebar = () => {
   const location = useLocation();
   const { currentCompany } = useAppContext();
 
+  if (!currentCompany) return null;
+
   return (
     <div className="w-64 bg-white border-r border-gray-200 h-screen flex flex-col fixed left-0 top-0 z-10">
       <div className="p-6 border-b border-gray-100">
@@ -131,6 +132,8 @@ const TenantSidebar = () => {
 
 const TenantHeader = () => {
   const { currentUser, currentCompany, setCurrentCompany, companies } = useAppContext();
+
+  if (!currentCompany || !currentUser) return null;
 
   return (
     <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-6 fixed top-0 right-0 left-64 z-10">
@@ -178,6 +181,8 @@ const TenantHeader = () => {
 
 const TenantSettings = () => {
   const { currentCompany } = useAppContext();
+
+  if (!currentCompany) return null;
 
   return (
     <div className="p-8 space-y-8">
@@ -229,9 +234,11 @@ const TenantSettings = () => {
 const Dashboard = () => {
   const { equipment, tickets, currentCompany } = useAppContext();
 
+  if (!currentCompany) return null;
+
   // Filtra equipamentos apenas da empresa atual
-  const companyEquipment = equipment.filter(e => e.companyId === currentCompany.id);
-  const companyTickets = tickets.filter(t => t.companyId === currentCompany.id);
+  const companyEquipment = equipment; // Already filtered by API/State
+  const companyTickets = tickets; // Already filtered by API/State
 
   const stats = [
     { label: 'Total Equipamentos', value: companyEquipment.length, color: 'bg-blue-500' },
@@ -330,14 +337,14 @@ const Dashboard = () => {
 };
 
 const EquipmentList = () => {
-  const { equipment, currentCompany } = useAppContext();
+  const { equipment, currentCompany, statuses, branches } = useAppContext();
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
 
-  // Filtra primeiro pela empresa, depois pela busca local
-  const filteredEquipment = equipment.filter(eq => {
-    if (eq.companyId !== currentCompany.id) return false;
+  if (!currentCompany) return null;
 
+  // Filtra primeiro pela empresa (já filtrado no contexto), depois pela busca local
+  const filteredEquipment = equipment.filter(eq => {
     const matchesSearch = 
       eq.type.toLowerCase().includes(search.toLowerCase()) ||
       eq.brand.toLowerCase().includes(search.toLowerCase()) ||
@@ -348,8 +355,8 @@ const EquipmentList = () => {
   });
 
   const getStatusBadge = (statusId: string) => {
-    const status = MOCK_STATUSES.find(s => s.id === statusId);
-    if (!status) return null;
+    const status = statuses.find(s => s.id === statusId);
+    if (!status) return <span className="text-xs text-gray-400">Desconhecido</span>;
     return (
       <span className={`px-2 py-1 rounded-full text-xs font-medium ${status.color}`}>
         {status.name}
@@ -385,7 +392,7 @@ const EquipmentList = () => {
             onChange={e => setFilterStatus(e.target.value)}
            >
              <option value="">Todos os Status</option>
-             {MOCK_STATUSES.filter(s => s.companyId === currentCompany.id || s.companyId === 'global').map(s => (
+             {statuses.map(s => (
                <option key={s.id} value={s.id}>{s.name}</option>
              ))}
            </select>
@@ -406,7 +413,7 @@ const EquipmentList = () => {
           </thead>
           <tbody className="divide-y divide-gray-100">
             {filteredEquipment.map((eq) => {
-              const branch = MOCK_BRANCHES.find(b => b.id === eq.branchId);
+              const branch = branches.find(b => b.id === eq.branchId);
               return (
                 <tr key={eq.id} className="hover:bg-gray-50 transition-colors">
                   <td className="px-6 py-4">
@@ -438,7 +445,7 @@ const EquipmentList = () => {
 };
 
 const MaintenanceKanban = () => {
-  const { tickets, setTickets, equipment, currentCompany } = useAppContext();
+  const { tickets, setTickets, equipment } = useAppContext();
   
   const columns = [
     { id: 'Aberto', title: 'Aberto', color: 'border-t-4 border-blue-500' },
@@ -472,7 +479,7 @@ const MaintenanceKanban = () => {
     }
   };
 
-  const companyTickets = tickets.filter(t => t.companyId === currentCompany.id);
+  const companyTickets = tickets;
 
   return (
     <div className="p-8 h-[calc(100vh-64px)] flex flex-col">
@@ -831,6 +838,19 @@ const MasterFinance = () => {
 // --- LAYOUTS ---
 
 const TenantLayout = () => {
+  const { isLoading } = useAppContext();
+  
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin text-indigo-600 mx-auto mb-4" />
+          <p className="text-gray-500">Carregando sistema...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen flex bg-gray-50/50">
       <TenantSidebar />
@@ -845,6 +865,16 @@ const TenantLayout = () => {
 };
 
 const MasterLayout = () => {
+  const { isLoading } = useAppContext();
+  
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-100">
+        <Loader2 className="h-8 w-8 animate-spin text-gray-800" />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen flex bg-gray-100">
       <MasterSidebar />
@@ -858,13 +888,76 @@ const MasterLayout = () => {
 // --- APP ENTRY POINT ---
 
 const App = () => {
-  // Initialize State with Mock Data
-  const [currentCompany, setCurrentCompany] = useState<Company>(MOCK_COMPANIES[0]);
-  const [currentUser] = useState<User>(MOCK_USERS[0]);
-  const [equipment, setEquipment] = useState<Equipment[]>(MOCK_EQUIPMENT);
-  const [tickets, setTickets] = useState<MaintenanceTicket[]>(MOCK_TICKETS);
-  const [companies, setCompanies] = useState<Company[]>(MOCK_COMPANIES);
-  const [transactions] = useState<Transaction[]>(MOCK_TRANSACTIONS);
+  // Initialize State
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [currentCompany, setCurrentCompany] = useState<Company | null>(null);
+  const [equipment, setEquipment] = useState<Equipment[]>([]);
+  const [tickets, setTickets] = useState<MaintenanceTicket[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [statuses, setStatuses] = useState<EquipmentStatus[]>([]);
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Load initial data (Companies and SaaS info)
+  useEffect(() => {
+    const loadGlobalData = async () => {
+      try {
+        setIsLoading(true);
+        // Fetch Companies
+        const companiesData = await masterApi.getCompanies();
+        setCompanies(companiesData);
+        
+        // Default to first active company for demo
+        if (companiesData.length > 0 && !currentCompany) {
+          setCurrentCompany(companiesData[0]);
+        }
+
+        // Fetch Transactions (Master View)
+        const transactionsData = await masterApi.getTransactions();
+        setTransactions(transactionsData);
+        
+        // Fetch Admin User (Simulated Login)
+        const admins = await masterApi.getAdminUsers();
+        if(admins.length > 0) setCurrentUser(admins[0]);
+
+      } catch (error) {
+        console.error("Failed to load global data", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadGlobalData();
+  }, []); // Run once on mount
+
+  // Load Tenant Data when company changes
+  useEffect(() => {
+    const loadTenantData = async () => {
+      if (!currentCompany) return;
+
+      try {
+        // We keep loading true or use a separate 'isTenantLoading' if we want to avoid full screen blocker
+        // For simplicity, we won't block the whole UI but filtered views will update
+        const eqData = await tenantApi.getEquipments(currentCompany.id);
+        setEquipment(eqData);
+
+        const ticketData = await tenantApi.getMaintenanceTickets(currentCompany.id);
+        setTickets(ticketData);
+
+        const statusData = await tenantApi.getEquipmentStatuses(currentCompany.id);
+        setStatuses(statusData);
+
+        const branchData = await tenantApi.getBranches(currentCompany.id);
+        setBranches(branchData);
+
+      } catch (error) {
+        console.error("Failed to load tenant data", error);
+      }
+    };
+
+    loadTenantData();
+  }, [currentCompany]);
 
   const contextValue = useMemo(() => ({
     currentUser,
@@ -876,8 +969,11 @@ const App = () => {
     setTickets,
     companies,
     setCompanies,
-    transactions
-  }), [currentUser, currentCompany, equipment, tickets, companies, transactions]);
+    transactions,
+    statuses,
+    branches,
+    isLoading
+  }), [currentUser, currentCompany, equipment, tickets, companies, transactions, statuses, branches, isLoading]);
 
   return (
     <AppContext.Provider value={contextValue}>
