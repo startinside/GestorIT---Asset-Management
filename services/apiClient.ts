@@ -1,8 +1,8 @@
 import axios from 'axios';
 
 // Default to localhost if env var is not set
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+// Using optional chaining for import.meta.env to prevent runtime errors if it is undefined
+const API_URL = import.meta.env?.VITE_API_URL || 'http://localhost:5000/api';
 
 const apiClient = axios.create({
   baseURL: API_URL,

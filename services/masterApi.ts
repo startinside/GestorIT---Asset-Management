@@ -1,27 +1,30 @@
 
 import apiClient from './apiClient';
 import { Company, Transaction, User } from '../types';
-import { MOCK_COMPANIES, MOCK_TRANSACTIONS, MOCK_USERS } from './mockData';
-
-// Simula delay de rede
-const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 export const masterApi = {
   getCompanies: async (): Promise<Company[]> => {
-    // TODO: Replace with: await apiClient.get('/master/v1/empresas');
-    await delay(500); 
-    return [...MOCK_COMPANIES];
+    const response = await apiClient.get('/master/v1/empresas');
+    // O backend retorna { data: [...], meta: ... }
+    // Se apiClient não desestruturar automaticamente, acessamos response.data.data
+    return response.data.data;
   },
 
   getTransactions: async (): Promise<Transaction[]> => {
-    // TODO: Replace with: await apiClient.get('/master/v1/financeiro');
-    await delay(500);
-    return [...MOCK_TRANSACTIONS];
+    const response = await apiClient.get('/master/v1/pagamentos');
+    return response.data.data;
   },
 
   getAdminUsers: async (): Promise<User[]> => {
-    // TODO: Replace with: await apiClient.get('/master/v1/usuarios');
-    await delay(500);
-    return MOCK_USERS.filter(u => u.role === 'superadmin_sistema');
+    // Endpoint simulado no backend ou retornando vazio por enquanto se não houver tabela de usuários master separada
+    // Para evitar erro 404 se não implementado, vamos assumir que o backend tem esse endpoint ou retorna vazio.
+    // Vou implementar no backend para garantir.
+    try {
+      const response = await apiClient.get('/master/v1/usuarios');
+      return response.data.data;
+    } catch (e) {
+      console.warn('Endpoint /master/v1/usuarios não disponível, retornando vazio.');
+      return [];
+    }
   }
 };

@@ -21,7 +21,8 @@ import {
   Activity,
   Lock,
   Unlock,
-  Loader2
+  Loader2,
+  WifiOff
 } from 'lucide-react';
 import { Company, User, Equipment, MaintenanceTicket, Transaction, EquipmentStatus, Branch } from './types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from 'recharts';
@@ -45,6 +46,7 @@ interface AppContextType {
   statuses: EquipmentStatus[];
   branches: Branch[];
   isLoading: boolean;
+  error: string | null;
 }
 
 const AppContext = createContext<AppContextType | null>(null);
@@ -838,7 +840,7 @@ const MasterFinance = () => {
 // --- LAYOUTS ---
 
 const TenantLayout = () => {
-  const { isLoading } = useAppContext();
+  const { isLoading, error } = useAppContext();
   
   if (isLoading) {
     return (
@@ -846,6 +848,36 @@ const TenantLayout = () => {
         <div className="text-center">
           <Loader2 className="h-8 w-8 animate-spin text-indigo-600 mx-auto mb-4" />
           <p className="text-gray-500">Carregando sistema...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+        <div className="max-w-md w-full bg-white p-8 rounded-xl shadow-lg border border-gray-100 text-center">
+          <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-4">
+            <WifiOff className="h-8 w-8 text-red-500" />
+          </div>
+          <h2 className="text-xl font-bold text-gray-900 mb-2">Erro de Conexão</h2>
+          <p className="text-gray-600 mb-6">{error}</p>
+          <div className="bg-gray-50 p-4 rounded-lg text-left text-sm text-gray-700 mb-6">
+            <p className="font-semibold mb-2">Como resolver:</p>
+            <ol className="list-decimal pl-4 space-y-1">
+              <li>Certifique-se de que o backend Python está rodando.</li>
+              <li>Abra o terminal na pasta <code>backend</code>.</li>
+              <li>Execute <code>pip install -r requirements.txt</code>.</li>
+              <li>Execute <code>python run.py</code>.</li>
+              <li>Recarregue esta página.</li>
+            </ol>
+          </div>
+          <button 
+            onClick={() => window.location.reload()}
+            className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-4 rounded-lg transition-colors"
+          >
+            Tentar Novamente
+          </button>
         </div>
       </div>
     );
@@ -865,7 +897,7 @@ const TenantLayout = () => {
 };
 
 const MasterLayout = () => {
-  const { isLoading } = useAppContext();
+  const { isLoading, error } = useAppContext();
   
   if (isLoading) {
     return (
@@ -873,6 +905,10 @@ const MasterLayout = () => {
         <Loader2 className="h-8 w-8 animate-spin text-gray-800" />
       </div>
     );
+  }
+
+  if (error) {
+    return <TenantLayout />; // Re-use error screen
   }
 
   return (
@@ -898,12 +934,14 @@ const App = () => {
   const [statuses, setStatuses] = useState<EquipmentStatus[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   // Load initial data (Companies and SaaS info)
   useEffect(() => {
     const loadGlobalData = async () => {
       try {
         setIsLoading(true);
+        setError(null);
         // Fetch Companies
         const companiesData = await masterApi.getCompanies();
         setCompanies(companiesData);
@@ -921,8 +959,9 @@ const App = () => {
         const admins = await masterApi.getAdminUsers();
         if(admins.length > 0) setCurrentUser(admins[0]);
 
-      } catch (error) {
-        console.error("Failed to load global data", error);
+      } catch (err: any) {
+        console.error("Failed to load global data", err);
+        setError("Não foi possível conectar ao servidor (Backend). Verifique se o Python Flask está rodando na porta 5000.");
       } finally {
         setIsLoading(false);
       }
@@ -951,8 +990,9 @@ const App = () => {
         const branchData = await tenantApi.getBranches(currentCompany.id);
         setBranches(branchData);
 
-      } catch (error) {
-        console.error("Failed to load tenant data", error);
+      } catch (err) {
+        console.error("Failed to load tenant data", err);
+        // Don't set global error here to allow partial degradation, or show toast
       }
     };
 
@@ -972,8 +1012,9 @@ const App = () => {
     transactions,
     statuses,
     branches,
-    isLoading
-  }), [currentUser, currentCompany, equipment, tickets, companies, transactions, statuses, branches, isLoading]);
+    isLoading,
+    error
+  }), [currentUser, currentCompany, equipment, tickets, companies, transactions, statuses, branches, isLoading, error]);
 
   return (
     <AppContext.Provider value={contextValue}>
