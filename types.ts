@@ -21,13 +21,12 @@ export interface Company {
   name: string;
   cnpj: string;
   active: boolean;
-  // Campos SaaS Master
   status: CompanyStatus;
   plan: CompanyPlan;
   contactEmail?: string;
   limits: CompanyLimits;
   renewalDate: string;
-  isOverdue: boolean; // Inadimplente
+  isOverdue: boolean;
 }
 
 export interface Transaction {
@@ -54,6 +53,7 @@ export interface User {
   email: string;
   role: UserRole;
   avatarUrl?: string;
+  companies?: string[]; // IDs das empresas permitidas
 }
 
 export interface EquipmentStatus {
@@ -68,7 +68,7 @@ export interface Equipment {
   id: string;
   companyId: string;
   branchId: string;
-  type: string; // PC, Notebook, Monitor, etc.
+  type: string;
   brand: string;
   model: string;
   serialNumber: string;
@@ -99,6 +99,17 @@ export interface HistoryLog {
   equipmentId: string;
   userId: string;
   date: string;
-  type: 'CRIAÇÃO' | 'MUDANÇA_ESTADO' | 'TRANSFERENCIA' | 'MANUTENCAO';
+  type: string;
   description: string;
+}
+
+export interface AuthResponse {
+  token: string;
+  user: User;
+}
+
+export interface ApiResponse<T> {
+  data: T;
+  meta?: any;
+  errors?: any;
 }

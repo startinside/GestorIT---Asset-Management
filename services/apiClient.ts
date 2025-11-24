@@ -1,7 +1,7 @@
+
 import axios from 'axios';
 
-// Default to localhost if env var is not set
-// Using optional chaining for import.meta.env to prevent runtime errors if it is undefined
+// Acesso seguro à variável de ambiente ou fallback para localhost
 const API_URL = import.meta.env?.VITE_API_URL || 'http://localhost:5000/api';
 
 const apiClient = axios.create({
@@ -11,18 +11,31 @@ const apiClient = axios.create({
   },
 });
 
-// Response interceptor for global error handling
+// Request interceptor: Adiciona o Token JWT se existir
+apiClient.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('gestorit_token');
+    if (token) {
+      config.headers['Authorization'] = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
+
+// Response interceptor: Trata erros globais e evita truncamento
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
     const status = error.response ? error.response.status : null;
-    
+
     if (status === 401) {
       console.warn('Unauthorized access - redirecting to login...');
-      // Future: Trigger logout action or redirect
+      localStorage.removeItem('gestorit_token');
+      // Opcional: window.location.href = '/login';
     } else if (status === 403) {
       console.warn('Forbidden access - insufficient permissions.');
-    } else if (status >= 500) {
+    } else if (status && status >= 500) {
       console.error('Server error:', error.message);
     }
 

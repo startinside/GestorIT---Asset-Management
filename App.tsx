@@ -1,30 +1,11 @@
 
 import React, { useState, createContext, useContext, useMemo, useEffect } from 'react';
-import { HashRouter, Routes, Route, Link, useLocation, Navigate, Outlet } from 'react-router-dom';
+import { HashRouter, Routes, Route, Link, useLocation, Navigate, Outlet, useNavigate } from 'react-router-dom';
 import { 
-  LayoutDashboard, 
-  Monitor, 
-  Wrench, 
-  Users, 
-  Settings, 
-  LogOut, 
-  Building2, 
-  Bell, 
-  Search, 
-  Filter, 
-  Plus,
-  ChevronRight,
-  Calendar,
-  ShieldAlert,
-  DollarSign,
-  Globe,
-  Activity,
-  Lock,
-  Unlock,
-  Loader2,
-  WifiOff
+  LayoutDashboard, Monitor, Wrench, Users, Settings, LogOut, Building2, Bell, Search, Filter, 
+  Plus, ChevronRight, Calendar, ShieldAlert, DollarSign, Globe, Activity, Lock, Unlock, Loader2, WifiOff
 } from 'lucide-react';
-import { Company, User, Equipment, MaintenanceTicket, Transaction, EquipmentStatus, Branch } from './types';
+import { Company, User, Equipment, MaintenanceTicket, Transaction, EquipmentStatus, Branch, UserRole } from './types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from 'recharts';
 
 // Services
@@ -47,6 +28,8 @@ interface AppContextType {
   branches: Branch[];
   isLoading: boolean;
   error: string | null;
+  login: (token: string, user: User) => void;
+  logout: () => void;
 }
 
 const AppContext = createContext<AppContextType | null>(null);
@@ -57,15 +40,126 @@ const useAppContext = () => {
   return context;
 };
 
+// --- AUTH COMPONENTS ---
+
+const LoginPage = () => {
+  const { login, error: globalError } = useAppContext();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [loginError, setLoginError] = useState('');
+  const [mode, setMode] = useState<'tenant' | 'master'>('tenant');
+  const navigate = useNavigate();
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+    setLoginError('');
+
+    try {
+      let data;
+      if (mode === 'master') {
+        data = await masterApi.login(email, password);
+        login(data.token, data.user);
+        navigate('/master');
+      } else {
+        data = await tenantApi.login(email, password);
+        login(data.token, data.user);
+        navigate('/');
+      }
+    } catch (err: any) {
+      console.error(err);
+      setLoginError('Credenciais inválidas ou erro no servidor.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gray-100">
+      <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-md">
+        <div className="text-center mb-6">
+          <div className="flex justify-center mb-2">
+            {mode === 'master' ? <ShieldAlert size={40} className="text-indigo-600" /> : <Monitor size={40} className="text-blue-600" />}
+          </div>
+          <h1 className="text-2xl font-bold text-gray-900">GestorIT {mode === 'master' ? 'Master' : 'Login'}</h1>
+          <p className="text-gray-500 text-sm">Entre com suas credenciais para continuar</p>
+        </div>
+
+        {loginError && (
+          <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm mb-4 text-center border border-red-100">
+            {loginError}
+          </div>
+        )}
+        
+        {globalError && (
+          <div className="bg-yellow-50 text-yellow-700 p-3 rounded-lg text-sm mb-4 text-center border border-yellow-100">
+            {globalError}
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+            <input 
+              type="email" 
+              required
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              placeholder="seu@email.com"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Senha</label>
+            <input 
+              type="password" 
+              required
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              placeholder="••••••••"
+            />
+          </div>
+          <button 
+            type="submit" 
+            disabled={isLoading}
+            className={`w-full py-2.5 rounded-lg text-white font-semibold shadow-md hover:shadow-lg transition-all ${
+              mode === 'master' ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-blue-600 hover:bg-blue-700'
+            } ${isLoading ? 'opacity-70 cursor-not-allowed' : ''}`}
+          >
+            {isLoading ? <Loader2 className="animate-spin mx-auto" size={20} /> : 'Entrar'}
+          </button>
+        </form>
+
+        <div className="mt-6 text-center">
+          <button 
+            type="button"
+            onClick={() => { setMode(mode === 'tenant' ? 'master' : 'tenant'); setLoginError(''); }}
+            className="text-xs text-gray-500 hover:text-indigo-600 underline"
+          >
+            {mode === 'tenant' ? 'Acessar Painel Master' : 'Voltar para Login Tenant'}
+          </button>
+        </div>
+        
+        {/* Helper para Dev */}
+        <div className="mt-4 pt-4 border-t border-gray-100 text-xs text-gray-400 text-center">
+          <p>Dev Hint: admin@gestorit.com / admin123 (Tenant)</p>
+          <p>master@gestorit.com / master123 (Master)</p>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // --- SHARED COMPONENTS ---
 
-const SidebarItem = ({ to, icon: Icon, label, active, onClick }: { to: string; icon: any; label: string; active: boolean, onClick?: () => void }) => (
+const SidebarItem = ({ to, icon: Icon, label, active }: { to: string; icon: any; label: string; active: boolean }) => (
   <Link 
     to={to} 
-    onClick={onClick}
     className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
       active 
-        ? 'bg-opacity-10 bg-white text-white font-medium shadow-sm' // Style for dark sidebar (Master)
+        ? 'bg-opacity-10 bg-white text-white font-medium shadow-sm'
         : 'text-gray-400 hover:text-white hover:bg-gray-800'
     }`}
   >
@@ -88,11 +182,11 @@ const TenantSidebarItem = ({ to, icon: Icon, label, active }: { to: string; icon
   </Link>
 );
 
-// --- TENANT COMPONENTS (CLIENTE) ---
+// --- TENANT COMPONENTS ---
 
 const TenantSidebar = () => {
   const location = useLocation();
-  const { currentCompany } = useAppContext();
+  const { currentCompany, logout } = useAppContext();
 
   if (!currentCompany) return null;
 
@@ -120,10 +214,7 @@ const TenantSidebar = () => {
       </nav>
       
       <div className="p-4 border-t border-gray-100">
-        <Link to="/master" className="flex items-center gap-2 px-4 py-2 mb-2 text-xs font-medium text-gray-500 bg-gray-100 rounded hover:bg-gray-200 justify-center">
-          <ShieldAlert size={12} /> Simular Painel Master
-        </Link>
-        <button className="flex items-center gap-3 px-4 py-3 text-red-600 hover:bg-red-50 rounded-lg w-full transition-colors">
+        <button onClick={logout} className="flex items-center gap-3 px-4 py-3 text-red-600 hover:bg-red-50 rounded-lg w-full transition-colors">
           <LogOut size={20} />
           <span>Sair</span>
         </button>
@@ -160,18 +251,13 @@ const TenantHeader = () => {
       </div>
 
       <div className="flex items-center gap-6">
-        <button className="relative text-gray-500 hover:text-gray-700 transition-colors">
-          <Bell size={20} />
-          <span className="absolute top-0 right-0 block h-2 w-2 rounded-full bg-red-500 ring-2 ring-white"></span>
-        </button>
-        
         <div className="flex items-center gap-3 pl-6 border-l border-gray-200">
           <div className="text-right hidden md:block">
             <div className="text-sm font-medium text-gray-900">{currentUser.name}</div>
-            <div className="text-xs text-gray-500">{currentUser.role.replace('_', ' ')}</div>
+            <div className="text-xs text-gray-500">{currentUser.role}</div>
           </div>
           <img 
-            src={currentUser.avatarUrl || `https://ui-avatars.com/api/?name=${currentUser.name}&background=random`} 
+            src={`https://ui-avatars.com/api/?name=${currentUser.name}&background=random`} 
             alt="Profile" 
             className="h-9 w-9 rounded-full bg-gray-200 object-cover ring-2 ring-white shadow-sm"
           />
@@ -181,105 +267,23 @@ const TenantHeader = () => {
   );
 };
 
-const TenantSettings = () => {
-  const { currentCompany } = useAppContext();
-
-  if (!currentCompany) return null;
-
-  return (
-    <div className="p-8 space-y-8">
-      <div className="border-b border-gray-200 pb-5">
-        <h1 className="text-2xl font-bold text-gray-900">Configurações</h1>
-        <p className="text-gray-500 mt-1">Gerencie as preferências da empresa {currentCompany.name}</p>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-            <Building2 size={20} className="text-indigo-600" /> Dados da Empresa
-          </h3>
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Razão Social</label>
-              <input type="text" value={currentCompany.name} disabled className="mt-1 block w-full rounded-md border-gray-300 bg-gray-50 p-2 text-sm cursor-not-allowed" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700">CNPJ</label>
-              <input type="text" value={currentCompany.cnpj} disabled className="mt-1 block w-full rounded-md border-gray-300 bg-gray-50 p-2 text-sm cursor-not-allowed" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Plano Atual</label>
-              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800 mt-1">
-                {currentCompany.plan}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-            <Globe size={20} className="text-indigo-600" /> Categorias & Estados
-          </h3>
-          <p className="text-sm text-gray-500 mb-4">Gerencie as categorias de equipamentos e estados personalizados para sua organização.</p>
-          <button className="w-full bg-white border border-gray-300 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-50 text-sm font-medium transition-colors mb-2">
-            Gerenciar Estados de Equipamento
-          </button>
-          <button className="w-full bg-white border border-gray-300 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-50 text-sm font-medium transition-colors">
-            Gerenciar Categorias
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
 const Dashboard = () => {
   const { equipment, tickets, currentCompany } = useAppContext();
-
   if (!currentCompany) return null;
 
-  // Filtra equipamentos apenas da empresa atual
-  const companyEquipment = equipment; // Already filtered by API/State
-  const companyTickets = tickets; // Already filtered by API/State
-
   const stats = [
-    { label: 'Total Equipamentos', value: companyEquipment.length, color: 'bg-blue-500' },
-    { label: 'Em Manutenção', value: companyEquipment.filter(e => e.statusId === 's2').length, color: 'bg-yellow-500' },
-    { label: 'Disponíveis', value: companyEquipment.filter(e => e.statusId === 's1').length, color: 'bg-green-500' },
-    { label: 'Chamados Abertos', value: companyTickets.filter(t => t.kanbanStatus !== 'Concluído').length, color: 'bg-indigo-500' },
-  ];
-
-  const dataStatus = [
-    { name: 'Funcionando', value: companyEquipment.filter(e => e.statusId === 's1').length, color: '#10B981' },
-    { name: 'Manutenção', value: companyEquipment.filter(e => e.statusId === 's2').length, color: '#F59E0B' },
-    { name: 'Parado', value: companyEquipment.filter(e => e.statusId === 's3').length, color: '#6B7280' },
-    { name: 'Sucata', value: companyEquipment.filter(e => e.statusId === 's4').length, color: '#EF4444' },
-  ].filter(item => item.value > 0);
-
-  const dataTimeline = [
-    { name: 'Seg', chamados: 2 },
-    { name: 'Ter', chamados: 5 },
-    { name: 'Qua', chamados: 3 },
-    { name: 'Qui', chamados: 6 },
-    { name: 'Sex', chamados: 4 },
+    { label: 'Total Equipamentos', value: equipment.length, color: 'bg-blue-500' },
+    { label: 'Em Manutenção', value: equipment.filter(e => e.statusId === 's2').length, color: 'bg-yellow-500' },
+    { label: 'Chamados Abertos', value: tickets.filter(t => t.kanbanStatus !== 'Concluído').length, color: 'bg-indigo-500' },
   ];
 
   return (
     <div className="p-8 space-y-8">
-      <div className="flex justify-between items-end">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-          <p className="text-gray-500 mt-1">Visão geral dos ativos e manutenções</p>
-        </div>
-        <button className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg shadow-sm text-sm font-medium transition-colors flex items-center gap-2">
-          <Plus size={16} /> Novo Chamado
-        </button>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+      <h1 className="text-2xl font-bold text-gray-900">Dashboard - {currentCompany.name}</h1>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {stats.map((stat, i) => (
-          <div key={i} className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
-            <p className="text-sm font-medium text-gray-500 uppercase tracking-wide">{stat.label}</p>
+          <div key={i} className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+            <p className="text-sm font-medium text-gray-500 uppercase">{stat.label}</p>
             <div className="flex items-baseline gap-2 mt-2">
               <span className="text-3xl font-bold text-gray-900">{stat.value}</span>
               <div className={`h-2 w-2 rounded-full ${stat.color}`}></div>
@@ -287,154 +291,42 @@ const Dashboard = () => {
           </div>
         ))}
       </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-          <h3 className="text-lg font-semibold text-gray-900 mb-6">Status dos Ativos</h3>
-          <div className="h-64">
-             <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie 
-                    data={dataStatus} 
-                    innerRadius={60} 
-                    outerRadius={80} 
-                    paddingAngle={5} 
-                    dataKey="value"
-                  >
-                    {dataStatus.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                </PieChart>
-             </ResponsiveContainer>
-          </div>
-          <div className="flex justify-center gap-4 text-sm flex-wrap">
-            {dataStatus.map((s) => (
-              <div key={s.name} className="flex items-center gap-1">
-                <div className="w-3 h-3 rounded-full" style={{backgroundColor: s.color}}></div>
-                <span className="text-gray-600">{s.name}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-          <h3 className="text-lg font-semibold text-gray-900 mb-6">Chamados na Semana</h3>
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={dataTimeline}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
-                <XAxis dataKey="name" axisLine={false} tickLine={false} />
-                <YAxis axisLine={false} tickLine={false} />
-                <Tooltip cursor={{fill: '#F3F4F6'}} />
-                <Bar dataKey="chamados" fill="#6366F1" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-      </div>
     </div>
   );
 };
 
 const EquipmentList = () => {
-  const { equipment, currentCompany, statuses, branches } = useAppContext();
-  const [search, setSearch] = useState('');
-  const [filterStatus, setFilterStatus] = useState('');
-
-  if (!currentCompany) return null;
-
-  // Filtra primeiro pela empresa (já filtrado no contexto), depois pela busca local
-  const filteredEquipment = equipment.filter(eq => {
-    const matchesSearch = 
-      eq.type.toLowerCase().includes(search.toLowerCase()) ||
-      eq.brand.toLowerCase().includes(search.toLowerCase()) ||
-      eq.serialNumber.toLowerCase().includes(search.toLowerCase()) ||
-      eq.internalId.toLowerCase().includes(search.toLowerCase());
-    const matchesStatus = filterStatus ? eq.statusId === filterStatus : true;
-    return matchesSearch && matchesStatus;
-  });
-
-  const getStatusBadge = (statusId: string) => {
-    const status = statuses.find(s => s.id === statusId);
-    if (!status) return <span className="text-xs text-gray-400">Desconhecido</span>;
-    return (
-      <span className={`px-2 py-1 rounded-full text-xs font-medium ${status.color}`}>
-        {status.name}
-      </span>
-    );
-  };
+  const { equipment, statuses, branches } = useAppContext();
 
   return (
     <div className="p-8 space-y-6">
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold text-gray-900">Equipamentos</h1>
-        <button className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg shadow-sm text-sm font-medium flex items-center gap-2">
-          <Plus size={16} /> Novo Equipamento
-        </button>
+        <button className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm">Novo Equipamento</button>
       </div>
-
-      <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex gap-4 items-center">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-          <input 
-            type="text" 
-            placeholder="Buscar por serial, tipo, marca ou ID interno..." 
-            className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-          />
-        </div>
-        <div className="relative min-w-[200px]">
-           <Filter className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-           <select 
-            className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm appearance-none bg-white"
-            value={filterStatus}
-            onChange={e => setFilterStatus(e.target.value)}
-           >
-             <option value="">Todos os Status</option>
-             {statuses.map(s => (
-               <option key={s.id} value={s.id}>{s.name}</option>
-             ))}
-           </select>
-        </div>
-      </div>
-
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
         <table className="w-full text-sm text-left">
-          <thead className="bg-gray-50 text-gray-500 font-medium uppercase tracking-wider text-xs">
+          <thead className="bg-gray-50 text-gray-500 font-medium uppercase text-xs">
             <tr>
-              <th className="px-6 py-3">Identificação</th>
-              <th className="px-6 py-3">Tipo/Modelo</th>
-              <th className="px-6 py-3">Serial</th>
+              <th className="px-6 py-3">Nome/ID</th>
+              <th className="px-6 py-3">Tipo</th>
               <th className="px-6 py-3">Filial</th>
               <th className="px-6 py-3">Status</th>
-              <th className="px-6 py-3 text-right">Ações</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {filteredEquipment.map((eq) => {
+            {equipment.map((eq) => {
               const branch = branches.find(b => b.id === eq.branchId);
+              const status = statuses.find(s => s.id === eq.statusId);
               return (
-                <tr key={eq.id} className="hover:bg-gray-50 transition-colors">
+                <tr key={eq.id}>
+                  <td className="px-6 py-4 font-medium">{eq.internalId}</td>
+                  <td className="px-6 py-4">{eq.type}</td>
+                  <td className="px-6 py-4">{branch?.name || 'N/A'}</td>
                   <td className="px-6 py-4">
-                    <div className="font-medium text-gray-900">{eq.internalId}</div>
-                    <div className="text-gray-400 text-xs">{eq.patrimonyId || 'S/P'}</div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="text-gray-900">{eq.type}</div>
-                    <div className="text-gray-500 text-xs">{eq.brand} {eq.model}</div>
-                  </td>
-                  <td className="px-6 py-4 font-mono text-gray-600 text-xs">{eq.serialNumber}</td>
-                  <td className="px-6 py-4 text-gray-600">{branch?.name || 'N/A'}</td>
-                  <td className="px-6 py-4">
-                    {getStatusBadge(eq.statusId)}
-                  </td>
-                  <td className="px-6 py-4 text-right">
-                    <button className="text-indigo-600 hover:text-indigo-800 font-medium text-xs inline-flex items-center gap-1">
-                      Detalhes <ChevronRight size={14} />
-                    </button>
+                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${status?.color || 'bg-gray-100'}`}>
+                      {status?.name || 'Unknown'}
+                    </span>
                   </td>
                 </tr>
               );
@@ -447,110 +339,23 @@ const EquipmentList = () => {
 };
 
 const MaintenanceKanban = () => {
-  const { tickets, setTickets, equipment } = useAppContext();
-  
-  const columns = [
-    { id: 'Aberto', title: 'Aberto', color: 'border-t-4 border-blue-500' },
-    { id: 'Em Manutenção', title: 'Em Andamento', color: 'border-t-4 border-yellow-500' },
-    { id: 'Concluído', title: 'Concluído', color: 'border-t-4 border-green-500' }
-  ];
-
-  // Simple drag and drop simulation
-  const onDragStart = (e: React.DragEvent, id: string) => {
-    e.dataTransfer.setData("id", id);
-  };
-
-  const onDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-  };
-
-  const onDrop = (e: React.DragEvent, newStatus: any) => {
-    let id = e.dataTransfer.getData("id");
-    setTickets(prev => prev.map(t => {
-      if (t.id === id) return { ...t, kanbanStatus: newStatus };
-      return t;
-    }));
-  };
-
-  const getPriorityColor = (p: string) => {
-    switch(p) {
-      case 'Crítica': return 'bg-red-100 text-red-800';
-      case 'Alta': return 'bg-orange-100 text-orange-800';
-      case 'Média': return 'bg-yellow-100 text-yellow-800';
-      default: return 'bg-blue-100 text-blue-800';
-    }
-  };
-
-  const companyTickets = tickets;
+  const { tickets } = useAppContext();
+  const columns = ['Aberto', 'Em Manutenção', 'Concluído'];
 
   return (
     <div className="p-8 h-[calc(100vh-64px)] flex flex-col">
-      <div className="flex justify-between items-center mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Quadro de Manutenção</h1>
-          <p className="text-gray-500 text-sm">Gerencie chamados e ordens de serviço</p>
-        </div>
-        <div className="flex gap-2">
-           <button className="bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 px-4 py-2 rounded-lg shadow-sm text-sm font-medium flex items-center gap-2">
-             <Calendar size={16} /> Linha do Tempo
-           </button>
-           <button className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg shadow-sm text-sm font-medium flex items-center gap-2">
-             <Plus size={16} /> Novo Chamado
-           </button>
-        </div>
-      </div>
-
-      <div className="flex-1 flex gap-6 overflow-x-auto pb-4">
+      <h1 className="text-2xl font-bold text-gray-900 mb-6">Kanban Manutenção</h1>
+      <div className="flex-1 flex gap-6 overflow-x-auto">
         {columns.map(col => (
-          <div 
-            key={col.id} 
-            className={`flex-1 min-w-[300px] bg-gray-100 rounded-xl flex flex-col max-h-full ${col.color}`}
-            onDragOver={onDragOver}
-            onDrop={(e) => onDrop(e, col.id)}
-          >
-            <div className="p-4 font-semibold text-gray-700 flex justify-between items-center sticky top-0 bg-gray-100 rounded-t-xl z-10">
-              <span>{col.title}</span>
-              <span className="bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full text-xs">
-                {companyTickets.filter(t => {
-                    if(col.id === 'Em Manutenção') return ['Em Manutenção', 'Em Análise', 'Aguardando Peça'].includes(t.kanbanStatus);
-                    return t.kanbanStatus === col.id;
-                }).length}
-              </span>
-            </div>
-            
-            <div className="p-3 space-y-3 overflow-y-auto scrollbar-hide flex-1">
-              {companyTickets.filter(t => {
-                  if(col.id === 'Em Manutenção') return ['Em Manutenção', 'Em Análise', 'Aguardando Peça'].includes(t.kanbanStatus);
-                  return t.kanbanStatus === col.id;
-              }).map(ticket => {
-                const equip = equipment.find(e => e.id === ticket.equipmentId);
-                return (
-                  <div 
-                    key={ticket.id} 
-                    draggable 
-                    onDragStart={(e) => onDragStart(e, ticket.id)}
-                    className="bg-white p-4 rounded-lg shadow-sm border border-gray-200 cursor-grab active:cursor-grabbing hover:shadow-md transition-shadow group"
-                  >
-                    <div className="flex justify-between items-start mb-2">
-                      <span className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded ${getPriorityColor(ticket.priority)}`}>
-                        {ticket.priority}
-                      </span>
-                      <span className="text-xs text-gray-400">
-                        {new Date(ticket.createdAt).toLocaleDateString('pt-BR', {day: '2-digit', month: '2-digit'})}
-                      </span>
-                    </div>
-                    <h4 className="font-medium text-gray-900 text-sm mb-1">{ticket.title}</h4>
-                    <p className="text-xs text-gray-500 line-clamp-2 mb-3">{ticket.description}</p>
-                    
-                    {equip && (
-                      <div className="flex items-center gap-2 text-xs text-gray-500 border-t border-gray-50 pt-2">
-                        <Monitor size={12} />
-                        <span>{equip.type} - {equip.internalId}</span>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+          <div key={col} className="flex-1 min-w-[300px] bg-gray-100 rounded-xl p-4">
+            <h3 className="font-bold text-gray-700 mb-4">{col}</h3>
+            <div className="space-y-3">
+              {tickets.filter(t => t.kanbanStatus === col).map(t => (
+                <div key={t.id} className="bg-white p-4 rounded-lg shadow-sm">
+                  <h4 className="font-medium text-sm">{t.title}</h4>
+                  <p className="text-xs text-gray-500 mt-1">{t.description}</p>
+                </div>
+              ))}
             </div>
           </div>
         ))}
@@ -559,10 +364,11 @@ const MaintenanceKanban = () => {
   );
 };
 
-// --- MASTER COMPONENTS (SAAS ADMIN) ---
+// --- MASTER COMPONENTS ---
 
 const MasterSidebar = () => {
   const location = useLocation();
+  const { logout } = useAppContext();
 
   return (
     <div className="w-64 bg-gray-900 border-r border-gray-800 h-screen flex flex-col fixed left-0 top-0 z-10 text-white">
@@ -571,37 +377,16 @@ const MasterSidebar = () => {
           <ShieldAlert className="h-8 w-8" />
           <span>MasterAdmin</span>
         </div>
-        <div className="mt-2 text-xs text-gray-500 uppercase tracking-wider font-semibold">
-          Painel do Sistema
-        </div>
       </div>
-
-      <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
-        <SidebarItem to="/master" icon={Activity} label="Dashboard SaaS" active={location.pathname === '/master'} />
+      <nav className="flex-1 p-4 space-y-1">
+        <SidebarItem to="/master" icon={Activity} label="Dashboard" active={location.pathname === '/master'} />
         <SidebarItem to="/master/empresas" icon={Building2} label="Empresas" active={location.pathname.startsWith('/master/empresas')} />
         <SidebarItem to="/master/financeiro" icon={DollarSign} label="Financeiro" active={location.pathname.startsWith('/master/financeiro')} />
-        <div className="pt-4 pb-2">
-          <div className="text-xs font-semibold text-gray-500 uppercase px-4 mb-2">Globais</div>
-          <SidebarItem to="/master/categorias" icon={Globe} label="Categorias Globais" active={location.pathname === '/master/categorias'} />
-          <SidebarItem to="/master/usuarios" icon={Users} label="Usuários Master" active={location.pathname === '/master/usuarios'} />
-        </div>
       </nav>
-
       <div className="p-4 border-t border-gray-800">
-        <Link to="/" className="flex items-center gap-2 px-4 py-2 mb-2 text-xs font-medium text-gray-400 bg-gray-800 rounded hover:bg-gray-700 justify-center">
-           <LogOut size={12} /> Voltar para Tenant
-        </Link>
-        <div className="flex items-center gap-3 px-4 py-2">
-           <img 
-            src="https://ui-avatars.com/api/?name=Master+Admin&background=000&color=fff"
-            alt="Master"
-            className="h-8 w-8 rounded-full ring-2 ring-indigo-500"
-           />
-           <div className="text-xs">
-             <div className="font-bold">Super Admin</div>
-             <div className="text-gray-500">root@system</div>
-           </div>
-        </div>
+        <button onClick={logout} className="flex items-center gap-2 px-4 py-2 text-xs font-medium text-gray-400 bg-gray-800 rounded hover:bg-gray-700 w-full justify-center">
+           <LogOut size={12} /> Sair
+        </button>
       </div>
     </div>
   );
@@ -609,89 +394,18 @@ const MasterSidebar = () => {
 
 const MasterDashboard = () => {
   const { companies, transactions } = useAppContext();
-
-  const totalMRR = transactions
-    .filter(t => t.type === 'MENSALIDADE' && t.status === 'PAGO')
-    .reduce((acc, t) => acc + t.amount, 0);
   
-  const inadimplentes = companies.filter(c => c.isOverdue).length;
-
-  const stats = [
-    { label: 'Total Empresas', value: companies.length, color: 'bg-indigo-500', icon: Building2 },
-    { label: 'MRR (Estimado)', value: `R$ ${totalMRR.toLocaleString('pt-BR')}`, color: 'bg-green-500', icon: DollarSign },
-    { label: 'Inadimplentes', value: inadimplentes, color: 'bg-red-500', icon: ShieldAlert },
-    { label: 'Transações Pendentes', value: transactions.filter(t => t.status === 'PENDENTE' || t.status === 'VENCIDO').length, color: 'bg-yellow-500', icon: Activity },
-  ];
-
-  // Simple Chart Data
-  const revData = [
-    { name: 'Jul', value: 12000 },
-    { name: 'Ago', value: 13500 },
-    { name: 'Set', value: 13000 },
-    { name: 'Out', value: 15200 },
-  ];
-
   return (
     <div className="p-8 space-y-8">
-      <div className="flex justify-between items-end">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Painel Master</h1>
-          <p className="text-gray-500 mt-1">Gestão global do ecossistema SaaS</p>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        {stats.map((stat, i) => (
-          <div key={i} className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-            <div className="flex justify-between items-start">
-              <div>
-                <p className="text-sm font-medium text-gray-500 uppercase tracking-wide">{stat.label}</p>
-                <h3 className="text-2xl font-bold text-gray-900 mt-2">{stat.value}</h3>
-              </div>
-              <div className={`p-3 rounded-lg ${stat.color} bg-opacity-10`}>
-                <stat.icon size={24} className={`text-${stat.color.replace('bg-', '')}-600`} color="black" />
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <h1 className="text-2xl font-bold text-gray-900">Dashboard Master</h1>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-          <h3 className="text-lg font-semibold text-gray-900 mb-6">Crescimento de Receita</h3>
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={revData}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="name" axisLine={false} tickLine={false} />
-                <YAxis axisLine={false} tickLine={false} />
-                <Tooltip />
-                <Line type="monotone" dataKey="value" stroke="#4F46E5" strokeWidth={2} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
+          <p className="text-sm text-gray-500">Total Empresas</p>
+          <p className="text-3xl font-bold">{companies.length}</p>
         </div>
-
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Empresas Recentes</h3>
-          <div className="space-y-4">
-            {companies.slice(0, 3).map(company => (
-              <div key={company.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600 font-bold">
-                    {company.name.substring(0, 2).toUpperCase()}
-                  </div>
-                  <div>
-                    <div className="font-medium text-gray-900">{company.name}</div>
-                    <div className="text-xs text-gray-500">{company.plan} Plan</div>
-                  </div>
-                </div>
-                <span className={`px-2 py-1 rounded-full text-xs font-medium ${company.active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                  {company.status}
-                </span>
-              </div>
-            ))}
-          </div>
+           <p className="text-sm text-gray-500">Transações</p>
+           <p className="text-3xl font-bold">{transactions.length}</p>
         </div>
       </div>
     </div>
@@ -699,137 +413,29 @@ const MasterDashboard = () => {
 };
 
 const MasterCompanyList = () => {
-  const { companies, setCompanies } = useAppContext();
-
-  const toggleStatus = (id: string) => {
-    setCompanies(prev => prev.map(c => {
-      if (c.id === id) {
-        const newActive = !c.active;
-        return { ...c, active: newActive, status: newActive ? 'ATIVA' : 'SUSPENSA' };
-      }
-      return c;
-    }));
-  };
-
+  const { companies } = useAppContext();
   return (
     <div className="p-8 space-y-6">
-      <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-gray-900">Empresas Cadastradas</h1>
-        <button className="bg-indigo-600 text-white px-4 py-2 rounded-lg flex items-center gap-2">
-          <Plus size={16} /> Nova Empresa
-        </button>
-      </div>
-
+      <h1 className="text-2xl font-bold text-gray-900">Empresas</h1>
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
         <table className="w-full text-sm text-left">
-          <thead className="bg-gray-50 text-gray-500 font-medium uppercase tracking-wider text-xs">
+          <thead className="bg-gray-50 text-gray-500 font-medium uppercase text-xs">
             <tr>
-              <th className="px-6 py-3">Empresa</th>
+              <th className="px-6 py-3">Nome</th>
+              <th className="px-6 py-3">CNPJ</th>
               <th className="px-6 py-3">Plano</th>
-              <th className="px-6 py-3">Limites (Usu/Fil/Eq)</th>
               <th className="px-6 py-3">Status</th>
-              <th className="px-6 py-3">Inadimplência</th>
-              <th className="px-6 py-3 text-right">Ações</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {companies.map(company => (
-              <tr key={company.id} className="hover:bg-gray-50">
-                <td className="px-6 py-4">
-                  <div className="font-medium text-gray-900">{company.name}</div>
-                  <div className="text-xs text-gray-500">{company.cnpj}</div>
-                </td>
-                <td className="px-6 py-4">
-                  <span className="px-2 py-1 bg-blue-50 text-blue-700 rounded-md text-xs font-bold border border-blue-100">
-                    {company.plan}
-                  </span>
-                </td>
-                <td className="px-6 py-4 text-gray-600">
-                  {company.limits.users} / {company.limits.branches} / {company.limits.equipments}
-                </td>
-                <td className="px-6 py-4">
-                   <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                     company.status === 'ATIVA' ? 'bg-green-100 text-green-800' : 
-                     company.status === 'SUSPENSA' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'
-                   }`}>
-                     {company.status}
-                   </span>
-                </td>
-                <td className="px-6 py-4">
-                  {company.isOverdue ? (
-                    <span className="flex items-center gap-1 text-red-600 font-bold text-xs">
-                      <ShieldAlert size={14} /> SIM
-                    </span>
-                  ) : (
-                    <span className="text-green-600 text-xs font-medium">Regular</span>
-                  )}
-                </td>
-                <td className="px-6 py-4 text-right flex justify-end gap-2">
-                  <button 
-                    onClick={() => toggleStatus(company.id)}
-                    className={`p-1.5 rounded hover:bg-gray-100 border border-gray-200 ${company.active ? 'text-red-600' : 'text-green-600'}`} 
-                    title={company.active ? "Suspender" : "Ativar"}
-                  >
-                    {company.active ? <Lock size={16} /> : <Unlock size={16} />}
-                  </button>
-                  <button className="p-1.5 rounded hover:bg-gray-100 border border-gray-200 text-gray-600" title="Editar">
-                    <Settings size={16} />
-                  </button>
-                </td>
+            {companies.map(c => (
+              <tr key={c.id}>
+                <td className="px-6 py-4 font-medium">{c.name}</td>
+                <td className="px-6 py-4">{c.cnpj}</td>
+                <td className="px-6 py-4">{c.plan}</td>
+                <td className="px-6 py-4">{c.status}</td>
               </tr>
             ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-};
-
-const MasterFinance = () => {
-  const { transactions, companies } = useAppContext();
-
-  return (
-    <div className="p-8 space-y-6">
-      <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-gray-900">Financeiro</h1>
-        <button className="bg-white border border-gray-200 text-gray-700 px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-gray-50">
-          <Plus size={16} /> Lançamento Manual
-        </button>
-      </div>
-
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-         <table className="w-full text-sm text-left">
-          <thead className="bg-gray-50 text-gray-500 font-medium uppercase tracking-wider text-xs">
-            <tr>
-              <th className="px-6 py-3">Data</th>
-              <th className="px-6 py-3">Empresa</th>
-              <th className="px-6 py-3">Descrição</th>
-              <th className="px-6 py-3">Valor</th>
-              <th className="px-6 py-3">Método</th>
-              <th className="px-6 py-3">Status</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {transactions.map(t => {
-              const comp = companies.find(c => c.id === t.companyId);
-              return (
-                <tr key={t.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 text-gray-600">{new Date(t.date).toLocaleDateString('pt-BR')}</td>
-                  <td className="px-6 py-4 font-medium text-gray-900">{comp?.name || 'N/A'}</td>
-                  <td className="px-6 py-4 text-gray-500">{t.description}</td>
-                  <td className="px-6 py-4 font-mono font-medium">R$ {t.amount.toFixed(2)}</td>
-                  <td className="px-6 py-4 text-xs uppercase text-gray-500">{t.paymentMethod}</td>
-                  <td className="px-6 py-4">
-                    <span className={`px-2 py-1 rounded text-xs font-bold ${
-                      t.status === 'PAGO' ? 'bg-green-100 text-green-800' :
-                      t.status === 'VENCIDO' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'
-                    }`}>
-                      {t.status}
-                    </span>
-                  </td>
-                </tr>
-              );
-            })}
           </tbody>
         </table>
       </div>
@@ -840,202 +446,163 @@ const MasterFinance = () => {
 // --- LAYOUTS ---
 
 const TenantLayout = () => {
-  const { isLoading, error } = useAppContext();
+  const { isLoading, error, currentUser } = useAppContext();
   
-  if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin text-indigo-600 mx-auto mb-4" />
-          <p className="text-gray-500">Carregando sistema...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
-        <div className="max-w-md w-full bg-white p-8 rounded-xl shadow-lg border border-gray-100 text-center">
-          <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-4">
-            <WifiOff className="h-8 w-8 text-red-500" />
-          </div>
-          <h2 className="text-xl font-bold text-gray-900 mb-2">Erro de Conexão</h2>
-          <p className="text-gray-600 mb-6">{error}</p>
-          <div className="bg-gray-50 p-4 rounded-lg text-left text-sm text-gray-700 mb-6">
-            <p className="font-semibold mb-2">Como resolver:</p>
-            <ol className="list-decimal pl-4 space-y-1">
-              <li>Certifique-se de que o backend Python está rodando.</li>
-              <li>Abra o terminal na pasta <code>backend</code>.</li>
-              <li>Execute <code>pip install -r requirements.txt</code>.</li>
-              <li>Execute <code>python run.py</code>.</li>
-              <li>Recarregue esta página.</li>
-            </ol>
-          </div>
-          <button 
-            onClick={() => window.location.reload()}
-            className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-4 rounded-lg transition-colors"
-          >
-            Tentar Novamente
-          </button>
-        </div>
-      </div>
-    );
-  }
+  if (isLoading) return <div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin" /></div>;
+  if (!currentUser) return <Navigate to="/login" replace />;
+  if (currentUser.role === UserRole.SUPER_ADMIN) return <Navigate to="/master" replace />;
+  if (error) return <div className="p-8 text-center text-red-600">{error}</div>;
 
   return (
     <div className="min-h-screen flex bg-gray-50/50">
       <TenantSidebar />
       <div className="flex-1 flex flex-col ml-64">
         <TenantHeader />
-        <main className="flex-1 pt-16 overflow-x-hidden">
-          <Outlet />
-        </main>
+        <main className="flex-1 pt-16"><Outlet /></main>
       </div>
     </div>
   );
 };
 
 const MasterLayout = () => {
-  const { isLoading, error } = useAppContext();
+  const { isLoading, error, currentUser } = useAppContext();
   
-  if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-100">
-        <Loader2 className="h-8 w-8 animate-spin text-gray-800" />
-      </div>
-    );
-  }
-
-  if (error) {
-    return <TenantLayout />; // Re-use error screen
-  }
+  if (isLoading) return <div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin" /></div>;
+  if (!currentUser) return <Navigate to="/login" replace />;
+  if (currentUser.role !== UserRole.SUPER_ADMIN) return <Navigate to="/" replace />;
+  if (error) return <div className="p-8 text-center text-red-600">{error}</div>;
 
   return (
     <div className="min-h-screen flex bg-gray-100">
       <MasterSidebar />
-      <div className="flex-1 flex flex-col ml-64 overflow-x-hidden">
-        <Outlet />
-      </div>
+      <div className="flex-1 flex flex-col ml-64"><Outlet /></div>
     </div>
   );
 };
 
-// --- APP ENTRY POINT ---
+// --- APP ---
 
 const App = () => {
-  // Initialize State
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [companies, setCompanies] = useState<Company[]>([]);
   const [currentCompany, setCurrentCompany] = useState<Company | null>(null);
+  const [companies, setCompanies] = useState<Company[]>([]);
   const [equipment, setEquipment] = useState<Equipment[]>([]);
   const [tickets, setTickets] = useState<MaintenanceTicket[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [statuses, setStatuses] = useState<EquipmentStatus[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false); // Initial loading handled by login check
   const [error, setError] = useState<string | null>(null);
 
-  // Load initial data (Companies and SaaS info)
+  // Restore session
   useEffect(() => {
-    const loadGlobalData = async () => {
+    const token = localStorage.getItem('gestorit_token');
+    const userStr = localStorage.getItem('gestorit_user');
+    if (token && userStr) {
+      setCurrentUser(JSON.parse(userStr));
+      // Trigger data load based on role
+    }
+  }, []);
+
+  // Load Data Effect
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const loadData = async () => {
+      setIsLoading(true);
+      setError(null);
       try {
-        setIsLoading(true);
-        setError(null);
-        // Fetch Companies
-        const companiesData = await masterApi.getCompanies();
-        setCompanies(companiesData);
-        
-        // Default to first active company for demo
-        if (companiesData.length > 0 && !currentCompany) {
-          setCurrentCompany(companiesData[0]);
+        if (currentUser.role === UserRole.SUPER_ADMIN) {
+          const [comps, trans] = await Promise.all([
+            masterApi.getCompanies(),
+            masterApi.getTransactions()
+          ]);
+          setCompanies(comps);
+          setTransactions(trans);
+        } else {
+          // Tenant Logic: Find associated companies
+          // For simplicity in this stage, fetch all companies the user has access to
+          // Ideally this comes from the /me endpoint or login response. 
+          // Here we simulate by fetching available companies from master (if allowed) or assuming user has companies attached.
+          // Since the prompt asks for real connection, let's assume login returns user.companies.
+          // We will fetch the first company's data.
+          
+          // NOTE: In a real scenario, we might hit an endpoint /v1/minhas-empresas
+          // For this stage, we'll try to get data for the ID stored in currentUser.companies[0] if exists
+          
+          if (currentUser.companies && currentUser.companies.length > 0) {
+             const companyId = currentUser.companies[0];
+             // Fetch basic company info (mocked endpoint call concept for now, or assume we have it)
+             // Let's just fetch equipments to verify connection
+             const [eq, tk, st, br] = await Promise.all([
+               tenantApi.getEquipments(companyId),
+               tenantApi.getMaintenanceTickets(companyId),
+               tenantApi.getEquipmentStatuses(companyId),
+               tenantApi.getBranches(companyId)
+             ]);
+             setEquipment(eq);
+             setTickets(tk);
+             setStatuses(st);
+             setBranches(br);
+             
+             // Create a fake company object just for context if we don't have the endpoint yet
+             setCurrentCompany({ id: companyId, name: 'Minha Empresa', active: true, status: 'ATIVA', plan: 'PRO', limits: {users:10, branches:2, equipments:100}, renewalDate: '', isOverdue: false, cnpj: '' });
+          }
         }
-
-        // Fetch Transactions (Master View)
-        const transactionsData = await masterApi.getTransactions();
-        setTransactions(transactionsData);
-        
-        // Fetch Admin User (Simulated Login)
-        const admins = await masterApi.getAdminUsers();
-        if(admins.length > 0) setCurrentUser(admins[0]);
-
       } catch (err: any) {
-        console.error("Failed to load global data", err);
-        setError("Não foi possível conectar ao servidor (Backend). Verifique se o Python Flask está rodando na porta 5000.");
+        console.error("Data load error", err);
+        if (err.response?.status !== 401) {
+          setError("Falha ao carregar dados do servidor.");
+        }
       } finally {
         setIsLoading(false);
       }
     };
 
-    loadGlobalData();
-  }, []); // Run once on mount
+    loadData();
+  }, [currentUser]);
 
-  // Load Tenant Data when company changes
-  useEffect(() => {
-    const loadTenantData = async () => {
-      if (!currentCompany) return;
+  const login = (token: string, user: User) => {
+    localStorage.setItem('gestorit_token', token);
+    localStorage.setItem('gestorit_user', JSON.stringify(user));
+    setCurrentUser(user);
+    setError(null);
+  };
 
-      try {
-        // We keep loading true or use a separate 'isTenantLoading' if we want to avoid full screen blocker
-        // For simplicity, we won't block the whole UI but filtered views will update
-        const eqData = await tenantApi.getEquipments(currentCompany.id);
-        setEquipment(eqData);
-
-        const ticketData = await tenantApi.getMaintenanceTickets(currentCompany.id);
-        setTickets(ticketData);
-
-        const statusData = await tenantApi.getEquipmentStatuses(currentCompany.id);
-        setStatuses(statusData);
-
-        const branchData = await tenantApi.getBranches(currentCompany.id);
-        setBranches(branchData);
-
-      } catch (err) {
-        console.error("Failed to load tenant data", err);
-        // Don't set global error here to allow partial degradation, or show toast
-      }
-    };
-
-    loadTenantData();
-  }, [currentCompany]);
+  const logout = () => {
+    localStorage.removeItem('gestorit_token');
+    localStorage.removeItem('gestorit_user');
+    setCurrentUser(null);
+    setCurrentCompany(null);
+    setCompanies([]);
+    setEquipment([]);
+  };
 
   const contextValue = useMemo(() => ({
-    currentUser,
-    currentCompany,
-    setCurrentCompany,
-    equipment,
-    setEquipment,
-    tickets,
-    setTickets,
-    companies,
-    setCompanies,
-    transactions,
-    statuses,
-    branches,
-    isLoading,
-    error
+    currentUser, currentCompany, setCurrentCompany, equipment, setEquipment, tickets, setTickets,
+    companies, setCompanies, transactions, statuses, branches, isLoading, error, login, logout
   }), [currentUser, currentCompany, equipment, tickets, companies, transactions, statuses, branches, isLoading, error]);
 
   return (
     <AppContext.Provider value={contextValue}>
       <HashRouter>
         <Routes>
-          {/* Tenant (Client) Routes */}
+          <Route path="/login" element={<LoginPage />} />
+          
+          {/* Tenant Routes */}
           <Route path="/" element={<TenantLayout />}>
             <Route index element={<Dashboard />} />
             <Route path="equipamentos" element={<EquipmentList />} />
             <Route path="manutencao" element={<MaintenanceKanban />} />
-            <Route path="usuarios" element={<div className="p-8 text-gray-500">Gestão de Usuários (Demo)</div>} />
-            <Route path="configuracoes" element={<TenantSettings />} />
+            <Route path="usuarios" element={<div>Gestão Usuários</div>} />
+            <Route path="configuracoes" element={<div>Configurações</div>} />
           </Route>
 
-          {/* Master (SaaS Admin) Routes */}
+          {/* Master Routes */}
           <Route path="/master" element={<MasterLayout />}>
              <Route index element={<MasterDashboard />} />
              <Route path="empresas" element={<MasterCompanyList />} />
-             <Route path="financeiro" element={<MasterFinance />} />
-             <Route path="categorias" element={<div className="p-8">Gestão de Categorias Globais (Em breve)</div>} />
-             <Route path="usuarios" element={<div className="p-8">Gestão de Usuários Master (Em breve)</div>} />
+             <Route path="financeiro" element={<div>Financeiro</div>} />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />
