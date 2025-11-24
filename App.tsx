@@ -1,295 +1,488 @@
-
-import React, { useState, createContext, useContext, useMemo, useEffect } from 'react';
-import { HashRouter, Routes, Route, Link, useLocation, Navigate, Outlet, useNavigate } from 'react-router-dom';
-import { 
-  LayoutDashboard, Monitor, Wrench, Users, Settings, LogOut, Building2, Bell, Search, Filter, 
-  Plus, ChevronRight, Calendar, ShieldAlert, DollarSign, Globe, Activity, Lock, Unlock, Loader2, WifiOff
+import React, {
+  useState,
+  useEffect,
+  useMemo,
+  createContext,
+  useContext,
+  ReactNode,
+} from 'react';
+import {
+  HashRouter,
+  Routes,
+  Route,
+  Navigate,
+  Outlet,
+  useNavigate,
+  Link,
+  useLocation,
+} from 'react-router-dom';
+import {
+  LayoutDashboard,
+  Monitor,
+  Wrench,
+  Users,
+  Settings,
+  LogOut,
+  Building2,
+  DollarSign,
+  Bell,
+  ShieldAlert,
 } from 'lucide-react';
-import { Company, User, Equipment, MaintenanceTicket, Transaction, EquipmentStatus, Branch, UserRole } from './types';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from 'recharts';
-
-// Services
+import {
+  Company,
+  User,
+  Equipment,
+  MaintenanceTicket,
+  Transaction,
+  EquipmentStatus,
+  Branch,
+  UserRole,
+} from './types';
 import { masterApi } from './services/masterApi';
 import { tenantApi } from './services/tenantApi';
 
-// --- CONTEXT ---
+// --------------------
+// Contexto da Aplicação
+// --------------------
+
+type AuthMode = 'tenant' | 'master';
+
 interface AppContextType {
+  mode: AuthMode | null;
   currentUser: User | null;
-  currentCompany: Company | null;
-  setCurrentCompany: (c: Company) => void;
+  currentCompanyId: string | null;
+
   equipment: Equipment[];
-  setEquipment: React.Dispatch<React.SetStateAction<Equipment[]>>;
   tickets: MaintenanceTicket[];
-  setTickets: React.Dispatch<React.SetStateAction<MaintenanceTicket[]>>;
   companies: Company[];
-  setCompanies: React.Dispatch<React.SetStateAction<Company[]>>;
   transactions: Transaction[];
   statuses: EquipmentStatus[];
   branches: Branch[];
+
   isLoading: boolean;
   error: string | null;
-  login: (token: string, user: User) => void;
+
+  login: (mode: AuthMode, email: string, password: string) => Promise<void>;
   logout: () => void;
+  setCurrentCompanyId: (id: string | null) => void;
 }
 
 const AppContext = createContext<AppContextType | null>(null);
 
-const useAppContext = () => {
-  const context = useContext(AppContext);
-  if (!context) throw new Error("useAppContext must be used within AppProvider");
-  return context;
+export const useAppContext = () => {
+  const ctx = useContext(AppContext);
+  if (!ctx) {
+    throw new Error('useAppContext deve ser usado dentro de AppProvider');
+  }
+  return ctx;
 };
 
-// --- AUTH COMPONENTS ---
+// --------------------
+// Provider
+// --------------------
 
-const LoginPage = () => {
-  const { login, error: globalError } = useAppContext();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [loginError, setLoginError] = useState('');
-  const [mode, setMode] = useState<'tenant' | 'master'>('tenant');
-  const navigate = useNavigate();
+const AppProvider = ({ children }: { children: ReactNode }) => {
+  const [mode, setMode] = useState<AuthMode | null>(null);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [currentCompanyId, setCurrentCompanyId] = useState<string | null>(null);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsLoading(true);
-    setLoginError('');
+  const [equipment, setEquipment] = useState<Equipment[]>([]);
+  const [tickets, setTickets] = useState<MaintenanceTicket[]>([]);
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [statuses, setStatuses] = useState<EquipmentStatus[]>([]);
+  const [branches, setBranches] = useState<Branch[]>([]);
 
-    try {
-      let data;
-      if (mode === 'master') {
-        data = await masterApi.login(email, password);
-        login(data.token, data.user);
-        navigate('/master');
-      } else {
-        data = await tenantApi.login(email, password);
-        login(data.token, data.user);
-        navigate('/');
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Restaura sessão do localStorage (token + modo + usuário mínimo)
+  useEffect(() => {
+    const storedToken = localStorage.getItem('gestorit_token');
+    const storedMode = localStorage.getItem('gestorit_mode') as AuthMode | null;
+    const storedUser = localStorage.getItem('gestorit_user');
+    const storedCompanyId = localStorage.getItem('gestorit_company_id');
+
+    if (storedToken && storedMode && storedUser) {
+      try {
+        const parsedUser: User = JSON.parse(storedUser);
+        setMode(storedMode);
+        setCurrentUser(parsedUser);
+        if (storedCompanyId) setCurrentCompanyId(storedCompanyId);
+      } catch {
+        // Se der erro, limpa a sessão
+        localStorage.removeItem('gestorit_token');
+        localStorage.removeItem('gestorit_mode');
+        localStorage.removeItem('gestorit_user');
+        localStorage.removeItem('gestorit_company_id');
       }
+    }
+  }, []);
+
+  // Carrega dados iniciais conforme o modo/empresa
+  useEffect(() => {
+    const fetchInitialData = async () => {
+      if (!mode || !currentUser) return;
+      setIsLoading(true);
+      setError(null);
+      try {
+        if (mode === 'master') {
+          const [companiesRes, transactionsRes] = await Promise.all([
+            masterApi.getCompanies(),
+            masterApi.getTransactions(),
+          ]);
+          setCompanies(companiesRes);
+          setTransactions(transactionsRes);
+        } else if (mode === 'tenant') {
+          const companyId =
+            currentCompanyId ||
+            currentUser.companies?.[0] ||
+            'c1'; // fallback simples
+
+          setCurrentCompanyId(companyId);
+          localStorage.setItem('gestorit_company_id', companyId);
+
+          const [equipRes, ticketsRes, statusesRes, branchesRes] =
+            await Promise.all([
+              tenantApi.getEquipments(companyId),
+              tenantApi.getMaintenanceTickets(companyId),
+              tenantApi.getEquipmentStatuses(companyId),
+              tenantApi.getBranches(companyId),
+            ]);
+          setEquipment(equipRes);
+          setTickets(ticketsRes);
+          setStatuses(statusesRes);
+          setBranches(branchesRes);
+        }
+      } catch (err: any) {
+        console.error(err);
+        setError('Erro ao carregar dados iniciais.');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchInitialData();
+  }, [mode, currentUser, currentCompanyId]);
+
+  const login = async (modeSel: AuthMode, email: string, password: string) => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      let token: string;
+      let user: User;
+
+      if (modeSel === 'master') {
+        const res = await masterApi.login(email, password);
+        token = res.token;
+        user = res.user;
+      } else {
+        const res = await tenantApi.login(email, password);
+        token = res.token;
+        user = res.user;
+      }
+
+      localStorage.setItem('gestorit_token', token);
+      localStorage.setItem('gestorit_mode', modeSel);
+      localStorage.setItem('gestorit_user', JSON.stringify(user));
+
+      setMode(modeSel);
+      setCurrentUser(user);
+      setError(null);
     } catch (err: any) {
       console.error(err);
-      setLoginError('Credenciais inválidas ou erro no servidor.');
+      setError('Falha no login. Verifique suas credenciais.');
+      throw err;
     } finally {
       setIsLoading(false);
     }
   };
 
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100">
-      <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-md">
-        <div className="text-center mb-6">
-          <div className="flex justify-center mb-2">
-            {mode === 'master' ? <ShieldAlert size={40} className="text-indigo-600" /> : <Monitor size={40} className="text-blue-600" />}
-          </div>
-          <h1 className="text-2xl font-bold text-gray-900">GestorIT {mode === 'master' ? 'Master' : 'Login'}</h1>
-          <p className="text-gray-500 text-sm">Entre com suas credenciais para continuar</p>
-        </div>
+  const logout = () => {
+    localStorage.removeItem('gestorit_token');
+    localStorage.removeItem('gestorit_mode');
+    localStorage.removeItem('gestorit_user');
+    localStorage.removeItem('gestorit_company_id');
+    setMode(null);
+    setCurrentUser(null);
+    setCurrentCompanyId(null);
+    setEquipment([]);
+    setTickets([]);
+    setCompanies([]);
+    setTransactions([]);
+    setStatuses([]);
+    setBranches([]);
+  };
 
-        {loginError && (
-          <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm mb-4 text-center border border-red-100">
-            {loginError}
-          </div>
-        )}
-        
-        {globalError && (
-          <div className="bg-yellow-50 text-yellow-700 p-3 rounded-lg text-sm mb-4 text-center border border-yellow-100">
-            {globalError}
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-            <input 
-              type="email" 
-              required
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              placeholder="seu@email.com"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Senha</label>
-            <input 
-              type="password" 
-              required
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              placeholder="••••••••"
-            />
-          </div>
-          <button 
-            type="submit" 
-            disabled={isLoading}
-            className={`w-full py-2.5 rounded-lg text-white font-semibold shadow-md hover:shadow-lg transition-all ${
-              mode === 'master' ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-blue-600 hover:bg-blue-700'
-            } ${isLoading ? 'opacity-70 cursor-not-allowed' : ''}`}
-          >
-            {isLoading ? <Loader2 className="animate-spin mx-auto" size={20} /> : 'Entrar'}
-          </button>
-        </form>
-
-        <div className="mt-6 text-center">
-          <button 
-            type="button"
-            onClick={() => { setMode(mode === 'tenant' ? 'master' : 'tenant'); setLoginError(''); }}
-            className="text-xs text-gray-500 hover:text-indigo-600 underline"
-          >
-            {mode === 'tenant' ? 'Acessar Painel Master' : 'Voltar para Login Tenant'}
-          </button>
-        </div>
-        
-        {/* Helper para Dev */}
-        <div className="mt-4 pt-4 border-t border-gray-100 text-xs text-gray-400 text-center">
-          <p>Dev Hint: admin@gestorit.com / admin123 (Tenant)</p>
-          <p>master@gestorit.com / master123 (Master)</p>
-        </div>
-      </div>
-    </div>
+  const value: AppContextType = useMemo(
+    () => ({
+      mode,
+      currentUser,
+      currentCompanyId,
+      equipment,
+      tickets,
+      companies,
+      transactions,
+      statuses,
+      branches,
+      isLoading,
+      error,
+      login,
+      logout,
+      setCurrentCompanyId,
+    }),
+    [
+      mode,
+      currentUser,
+      currentCompanyId,
+      equipment,
+      tickets,
+      companies,
+      transactions,
+      statuses,
+      branches,
+      isLoading,
+      error,
+    ]
   );
+
+  return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 };
 
-// --- SHARED COMPONENTS ---
+// --------------------
+// Componentes de Layout / UI
+// --------------------
 
-const SidebarItem = ({ to, icon: Icon, label, active }: { to: string; icon: any; label: string; active: boolean }) => (
-  <Link 
-    to={to} 
-    className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
-      active 
-        ? 'bg-opacity-10 bg-white text-white font-medium shadow-sm'
-        : 'text-gray-400 hover:text-white hover:bg-gray-800'
-    }`}
-  >
-    <Icon size={20} />
-    <span>{label}</span>
-  </Link>
-);
-
-const TenantSidebarItem = ({ to, icon: Icon, label, active }: { to: string; icon: any; label: string; active: boolean }) => (
-  <Link 
-    to={to} 
-    className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
-      active 
-        ? 'bg-indigo-50 text-indigo-600 font-medium' 
-        : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-    }`}
-  >
-    <Icon size={20} />
-    <span>{label}</span>
-  </Link>
-);
-
-// --- TENANT COMPONENTS ---
-
-const TenantSidebar = () => {
+const TopBar = () => {
+  const { currentUser, logout } = useAppContext();
   const location = useLocation();
-  const { currentCompany, logout } = useAppContext();
+  const navigate = useNavigate();
 
-  if (!currentCompany) return null;
-
-  return (
-    <div className="w-64 bg-white border-r border-gray-200 h-screen flex flex-col fixed left-0 top-0 z-10">
-      <div className="p-6 border-b border-gray-100">
-        <div className="flex items-center gap-2 text-indigo-600 font-bold text-xl">
-          <Monitor className="h-8 w-8" />
-          <span>GestorIT</span>
-        </div>
-        <div className="mt-2 text-xs text-gray-400 uppercase tracking-wider font-semibold truncate">
-          {currentCompany.name}
-        </div>
-      </div>
-
-      <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
-        <TenantSidebarItem to="/" icon={LayoutDashboard} label="Dashboard" active={location.pathname === '/'} />
-        <TenantSidebarItem to="/equipamentos" icon={Monitor} label="Equipamentos" active={location.pathname.startsWith('/equipamentos')} />
-        <TenantSidebarItem to="/manutencao" icon={Wrench} label="Manutenção" active={location.pathname.startsWith('/manutencao')} />
-        <TenantSidebarItem to="/usuarios" icon={Users} label="Usuários" active={location.pathname === '/usuarios'} />
-        <div className="pt-4 pb-2">
-          <div className="text-xs font-semibold text-gray-400 uppercase px-4 mb-2">Administração</div>
-          <TenantSidebarItem to="/configuracoes" icon={Settings} label="Configurações" active={location.pathname === '/configuracoes'} />
-        </div>
-      </nav>
-      
-      <div className="p-4 border-t border-gray-100">
-        <button onClick={logout} className="flex items-center gap-3 px-4 py-3 text-red-600 hover:bg-red-50 rounded-lg w-full transition-colors">
-          <LogOut size={20} />
-          <span>Sair</span>
-        </button>
-      </div>
-    </div>
-  );
-};
-
-const TenantHeader = () => {
-  const { currentUser, currentCompany, setCurrentCompany, companies } = useAppContext();
-
-  if (!currentCompany || !currentUser) return null;
+  const title = useMemo(() => {
+    if (location.pathname.startsWith('/master')) return 'Painel Master (SaaS)';
+    if (location.pathname.startsWith('/app')) return 'Gestão de Ativos';
+    return 'GestorIT';
+  }, [location.pathname]);
 
   return (
-    <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-6 fixed top-0 right-0 left-64 z-10">
+    <header className="flex items-center justify-between px-6 py-3 bg-white border-b border-gray-200">
+      <div>
+        <h1 className="text-lg font-semibold text-gray-900">{title}</h1>
+        <p className="text-xs text-gray-500">
+          Controle centralizado de equipamentos, manutenções e empresas.
+        </p>
+      </div>
       <div className="flex items-center gap-4">
-        <div className="relative">
-          <select 
-            className="appearance-none bg-gray-50 border border-gray-200 text-gray-700 py-2 pl-4 pr-10 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm font-medium cursor-pointer"
-            value={currentCompany.id}
-            onChange={(e) => {
-              const company = companies.find(c => c.id === e.target.value);
-              if(company) setCurrentCompany(company);
-            }}
-          >
-            {companies.filter(c => c.active).map(c => (
-              <option key={c.id} value={c.id}>{c.name}</option>
-            ))}
-          </select>
-          <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-500">
-            <Building2 size={16} />
+        <button className="relative rounded-full p-2 hover:bg-gray-100">
+          <Bell className="w-5 h-5 text-gray-500" />
+        </button>
+        {currentUser && (
+          <div className="flex items-center gap-3">
+            <div className="text-right">
+              <div className="text-sm font-medium text-gray-800">
+                {currentUser.name}
+              </div>
+              <div className="text-xs text-gray-500">{currentUser.email}</div>
+            </div>
+            <button
+              onClick={() => {
+                logout();
+                navigate('/login');
+              }}
+              className="flex items-center gap-1 text-xs text-red-600 hover:text-red-700 border border-red-100 px-2 py-1 rounded-full bg-red-50"
+            >
+              <LogOut className="w-4 h-4" />
+              Sair
+            </button>
           </div>
-        </div>
-      </div>
-
-      <div className="flex items-center gap-6">
-        <div className="flex items-center gap-3 pl-6 border-l border-gray-200">
-          <div className="text-right hidden md:block">
-            <div className="text-sm font-medium text-gray-900">{currentUser.name}</div>
-            <div className="text-xs text-gray-500">{currentUser.role}</div>
-          </div>
-          <img 
-            src={`https://ui-avatars.com/api/?name=${currentUser.name}&background=random`} 
-            alt="Profile" 
-            className="h-9 w-9 rounded-full bg-gray-200 object-cover ring-2 ring-white shadow-sm"
-          />
-        </div>
+        )}
       </div>
     </header>
   );
 };
 
-const Dashboard = () => {
-  const { equipment, tickets, currentCompany } = useAppContext();
-  if (!currentCompany) return null;
-
-  const stats = [
-    { label: 'Total Equipamentos', value: equipment.length, color: 'bg-blue-500' },
-    { label: 'Em Manutenção', value: equipment.filter(e => e.statusId === 's2').length, color: 'bg-yellow-500' },
-    { label: 'Chamados Abertos', value: tickets.filter(t => t.kanbanStatus !== 'Concluído').length, color: 'bg-indigo-500' },
+const TenantSidebar = () => {
+  const location = useLocation();
+  const navItems = [
+    { to: '/app', label: 'Dashboard', icon: LayoutDashboard },
+    { to: '/app/equipamentos', label: 'Equipamentos', icon: Monitor },
+    { to: '/app/manutencao', label: 'Manutenção', icon: Wrench },
+    { to: '/app/usuarios', label: 'Usuários', icon: Users },
+    { to: '/app/configuracoes', label: 'Configurações', icon: Settings },
   ];
 
   return (
-    <div className="p-8 space-y-8">
-      <h1 className="text-2xl font-bold text-gray-900">Dashboard - {currentCompany.name}</h1>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {stats.map((stat, i) => (
-          <div key={i} className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-            <p className="text-sm font-medium text-gray-500 uppercase">{stat.label}</p>
-            <div className="flex items-baseline gap-2 mt-2">
-              <span className="text-3xl font-bold text-gray-900">{stat.value}</span>
-              <div className={`h-2 w-2 rounded-full ${stat.color}`}></div>
+    <aside className="w-64 bg-white border-r border-gray-200 flex flex-col">
+      <div className="px-4 py-4 border-b border-gray-100 flex items-center gap-2">
+        <Building2 className="w-6 h-6 text-indigo-600" />
+        <div>
+          <div className="text-sm font-semibold text-gray-900">GestorIT</div>
+          <div className="text-xs text-gray-500">Área do Cliente</div>
+        </div>
+      </div>
+      <nav className="flex-1 p-3 space-y-1">
+        {navItems.map((item) => {
+          const Icon = item.icon;
+          const active = location.pathname === item.to;
+          return (
+            <Link
+              key={item.to}
+              to={item.to}
+              className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm ${
+                active
+                  ? 'bg-indigo-50 text-indigo-700 font-medium'
+                  : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+              }`}
+            >
+              <Icon className="w-4 h-4" />
+              {item.label}
+            </Link>
+          );
+        })}
+      </nav>
+    </aside>
+  );
+};
+
+const MasterSidebar = () => {
+  const location = useLocation();
+  const navItems = [
+    { to: '/master', label: 'Visão Geral', icon: LayoutDashboard },
+    { to: '/master/empresas', label: 'Empresas', icon: Building2 },
+    { to: '/master/financeiro', label: 'Financeiro', icon: DollarSign },
+  ];
+
+  return (
+    <aside className="w-64 bg-slate-900 text-slate-50 flex flex-col">
+      <div className="px-4 py-4 border-b border-slate-800 flex items-center gap-2">
+        <Building2 className="w-6 h-6 text-emerald-400" />
+        <div>
+          <div className="text-sm font-semibold">GestorIT Master</div>
+          <div className="text-xs text-slate-400">Painel SaaS</div>
+        </div>
+      </div>
+      <nav className="flex-1 p-3 space-y-1">
+        {navItems.map((item) => {
+          const Icon = item.icon;
+          const active = location.pathname === item.to;
+          return (
+            <Link
+              key={item.to}
+              to={item.to}
+              className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm ${
+                active
+                  ? 'bg-slate-800 text-emerald-300 font-medium'
+                  : 'text-slate-200 hover:bg-slate-800 hover:text-white'
+              }`}
+            >
+              <Icon className="w-4 h-4" />
+              {item.label}
+            </Link>
+          );
+        })}
+      </nav>
+    </aside>
+  );
+};
+
+// --------------------
+// Páginas Tenant
+// --------------------
+
+const TenantDashboard = () => {
+  const { equipment, tickets, statuses, branches } = useAppContext();
+
+  const totalEquipments = equipment.length;
+  const openTickets = tickets.length;
+
+  const statusSummary = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const st of statuses) {
+      counts[st.name] = 0;
+    }
+    for (const eq of equipment) {
+      const st = statuses.find((s) => s.id === eq.statusId);
+      if (st) {
+        counts[st.name] = (counts[st.name] || 0) + 1;
+      }
+    }
+    return counts;
+  }, [equipment, statuses]);
+
+  return (
+    <div className="p-6 space-y-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4">
+          <div className="text-xs text-gray-500">Equipamentos</div>
+          <div className="mt-2 flex items-center justify-between">
+            <div className="text-2xl font-semibold text-gray-900">
+              {totalEquipments}
             </div>
+            <Monitor className="w-6 h-6 text-indigo-500" />
           </div>
-        ))}
+        </div>
+        <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4">
+          <div className="text-xs text-gray-500">Chamados em aberto</div>
+          <div className="mt-2 flex items-center justify-between">
+            <div className="text-2xl font-semibold text-gray-900">
+              {openTickets}
+            </div>
+            <Wrench className="w-6 h-6 text-amber-500" />
+          </div>
+        </div>
+        <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4">
+          <div className="text-xs text-gray-500">Estados de Equipamento</div>
+          <ul className="mt-2 text-xs text-gray-700 space-y-1">
+            {Object.entries(statusSummary).map(([name, count]) => (
+              <li key={name} className="flex justify-between">
+                <span>{name}</span>
+                <span className="font-medium">{count}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4">
+        <h2 className="text-sm font-semibold text-gray-800 mb-3">
+          Últimos equipamentos cadastrados
+        </h2>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs text-gray-500 border-b">
+                <th className="py-2">Descrição</th>
+                <th className="py-2">Tipo</th>
+                <th className="py-2">Filial</th>
+                <th className="py-2">Estado</th>
+              </tr>
+            </thead>
+            <tbody>
+              {equipment.slice(0, 5).map((eq) => {
+                const st = statuses.find((s) => s.id === eq.statusId);
+                const br = branches.find((b) => b.id === eq.branchId);
+                return (
+                  <tr key={eq.id} className="border-b last:border-0">
+                    <td className="py-2">{eq.description || eq.model}</td>
+                    <td className="py-2">{eq.type}</td>
+                    <td className="py-2">{br?.name || '-'}</td>
+                    <td className="py-2">{st?.name || '-'}</td>
+                  </tr>
+                );
+              })}
+              {equipment.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={4}
+                    className="py-4 text-center text-xs text-gray-500"
+                  >
+                    Nenhum equipamento encontrado.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
@@ -299,40 +492,51 @@ const EquipmentList = () => {
   const { equipment, statuses, branches } = useAppContext();
 
   return (
-    <div className="p-8 space-y-6">
-      <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-gray-900">Equipamentos</h1>
-        <button className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm">Novo Equipamento</button>
+    <div className="p-6 space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-semibold text-gray-900">
+          Equipamentos cadastrados
+        </h2>
       </div>
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-        <table className="w-full text-sm text-left">
-          <thead className="bg-gray-50 text-gray-500 font-medium uppercase text-xs">
-            <tr>
-              <th className="px-6 py-3">Nome/ID</th>
-              <th className="px-6 py-3">Tipo</th>
-              <th className="px-6 py-3">Filial</th>
-              <th className="px-6 py-3">Status</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {equipment.map((eq) => {
-              const branch = branches.find(b => b.id === eq.branchId);
-              const status = statuses.find(s => s.id === eq.statusId);
-              return (
-                <tr key={eq.id}>
-                  <td className="px-6 py-4 font-medium">{eq.internalId}</td>
-                  <td className="px-6 py-4">{eq.type}</td>
-                  <td className="px-6 py-4">{branch?.name || 'N/A'}</td>
-                  <td className="px-6 py-4">
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${status?.color || 'bg-gray-100'}`}>
-                      {status?.name || 'Unknown'}
-                    </span>
+      <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs text-gray-500 border-b">
+                <th className="py-2">Interno</th>
+                <th className="py-2">Tipo</th>
+                <th className="py-2">Modelo</th>
+                <th className="py-2">Filial</th>
+                <th className="py-2">Estado</th>
+              </tr>
+            </thead>
+            <tbody>
+              {equipment.map((eq) => {
+                const st = statuses.find((s) => s.id === eq.statusId);
+                const br = branches.find((b) => b.id === eq.branchId);
+                return (
+                  <tr key={eq.id} className="border-b last:border-0">
+                    <td className="py-2">{eq.internalId || '-'}</td>
+                    <td className="py-2">{eq.type}</td>
+                    <td className="py-2">{eq.model}</td>
+                    <td className="py-2">{br?.name || '-'}</td>
+                    <td className="py-2">{st?.name || '-'}</td>
+                  </tr>
+                );
+              })}
+              {equipment.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={5}
+                    className="py-4 text-center text-xs text-gray-500"
+                  >
+                    Nenhum equipamento cadastrado.
                   </td>
                 </tr>
-              );
-            })}
-          </tbody>
-        </table>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
@@ -340,22 +544,57 @@ const EquipmentList = () => {
 
 const MaintenanceKanban = () => {
   const { tickets } = useAppContext();
-  const columns = ['Aberto', 'Em Manutenção', 'Concluído'];
+
+  const grouped = useMemo(() => {
+    const groups: Record<string, MaintenanceTicket[]> = {};
+    for (const t of tickets) {
+      const col = t.kanbanStatus || 'Aberto';
+      if (!groups[col]) groups[col] = [];
+      groups[col].push(t);
+    }
+    return groups;
+  }, [tickets]);
+
+  const columns = ['Aberto', 'Em Andamento', 'Concluído'];
 
   return (
-    <div className="p-8 h-[calc(100vh-64px)] flex flex-col">
-      <h1 className="text-2xl font-bold text-gray-900 mb-6">Kanban Manutenção</h1>
-      <div className="flex-1 flex gap-6 overflow-x-auto">
-        {columns.map(col => (
-          <div key={col} className="flex-1 min-w-[300px] bg-gray-100 rounded-xl p-4">
-            <h3 className="font-bold text-gray-700 mb-4">{col}</h3>
-            <div className="space-y-3">
-              {tickets.filter(t => t.kanbanStatus === col).map(t => (
-                <div key={t.id} className="bg-white p-4 rounded-lg shadow-sm">
-                  <h4 className="font-medium text-sm">{t.title}</h4>
-                  <p className="text-xs text-gray-500 mt-1">{t.description}</p>
+    <div className="p-6">
+      <h2 className="text-lg font-semibold text-gray-900 mb-4">
+        Chamados de manutenção
+      </h2>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {columns.map((col) => (
+          <div
+            key={col}
+            className="bg-gray-50 rounded-lg border border-gray-200 p-3 flex flex-col"
+          >
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-semibold text-gray-800">{col}</span>
+              <span className="text-xs text-gray-500">
+                {grouped[col]?.length || 0}
+              </span>
+            </div>
+            <div className="space-y-2 max-h-96 overflow-y-auto">
+              {grouped[col]?.map((t) => (
+                <div
+                  key={t.id}
+                  className="bg-white rounded-md border border-gray-200 p-2 text-xs"
+                >
+                  <div className="font-semibold text-gray-800">
+                    {t.title || 'Chamado'}
+                  </div>
+                  <div className="text-gray-600 mt-1 line-clamp-2">
+                    {t.description}
+                  </div>
+                  <div className="mt-2 text-[10px] text-gray-400">
+                    Vencimento: {t.dueDate || '-'}
+                  </div>
                 </div>
-              ))}
+              )) || (
+                <div className="text-[11px] text-gray-400">
+                  Nenhum chamado nesta coluna.
+                </div>
+              )}
             </div>
           </div>
         ))}
@@ -364,48 +603,43 @@ const MaintenanceKanban = () => {
   );
 };
 
-// --- MASTER COMPONENTS ---
-
-const MasterSidebar = () => {
-  const location = useLocation();
-  const { logout } = useAppContext();
-
-  return (
-    <div className="w-64 bg-gray-900 border-r border-gray-800 h-screen flex flex-col fixed left-0 top-0 z-10 text-white">
-      <div className="p-6 border-b border-gray-800">
-        <div className="flex items-center gap-2 text-indigo-400 font-bold text-xl">
-          <ShieldAlert className="h-8 w-8" />
-          <span>MasterAdmin</span>
-        </div>
-      </div>
-      <nav className="flex-1 p-4 space-y-1">
-        <SidebarItem to="/master" icon={Activity} label="Dashboard" active={location.pathname === '/master'} />
-        <SidebarItem to="/master/empresas" icon={Building2} label="Empresas" active={location.pathname.startsWith('/master/empresas')} />
-        <SidebarItem to="/master/financeiro" icon={DollarSign} label="Financeiro" active={location.pathname.startsWith('/master/financeiro')} />
-      </nav>
-      <div className="p-4 border-t border-gray-800">
-        <button onClick={logout} className="flex items-center gap-2 px-4 py-2 text-xs font-medium text-gray-400 bg-gray-800 rounded hover:bg-gray-700 w-full justify-center">
-           <LogOut size={12} /> Sair
-        </button>
-      </div>
-    </div>
-  );
-};
+// --------------------
+// Páginas Master
+// --------------------
 
 const MasterDashboard = () => {
   const { companies, transactions } = useAppContext();
-  
+
+  const totalEmpresas = companies.length;
+  const inadimplentes = companies.filter((c) => c.isOverdue).length;
+  const faturamento =
+    transactions.reduce((sum, t) => sum + (t.amount || 0), 0) || 0;
+
   return (
-    <div className="p-8 space-y-8">
-      <h1 className="text-2xl font-bold text-gray-900">Dashboard Master</h1>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-          <p className="text-sm text-gray-500">Total Empresas</p>
-          <p className="text-3xl font-bold">{companies.length}</p>
+    <div className="p-6 space-y-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="bg-slate-900 text-slate-50 rounded-lg p-4">
+          <div className="text-xs text-slate-300">Empresas Ativas</div>
+          <div className="mt-2 flex items-center justify-between">
+            <div className="text-2xl font-semibold">{totalEmpresas}</div>
+            <Building2 className="w-6 h-6 text-emerald-400" />
+          </div>
         </div>
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-           <p className="text-sm text-gray-500">Transações</p>
-           <p className="text-3xl font-bold">{transactions.length}</p>
+        <div className="bg-slate-900 text-slate-50 rounded-lg p-4">
+          <div className="text-xs text-slate-300">Inadimplentes</div>
+          <div className="mt-2 flex items-center justify-between">
+            <div className="text-2xl font-semibold">{inadimplentes}</div>
+            <ShieldAlert className="w-6 h-6 text-amber-400" />
+          </div>
+        </div>
+        <div className="bg-slate-900 text-slate-50 rounded-lg p-4">
+          <div className="text-xs text-slate-300">Faturamento Total</div>
+          <div className="mt-2 flex items-center justify-between">
+            <div className="text-2xl font-semibold">
+              R$ {faturamento.toFixed(2)}
+            </div>
+            <DollarSign className="w-6 h-6 text-emerald-400" />
+          </div>
         </div>
       </div>
     </div>
@@ -414,201 +648,311 @@ const MasterDashboard = () => {
 
 const MasterCompanyList = () => {
   const { companies } = useAppContext();
+
   return (
-    <div className="p-8 space-y-6">
-      <h1 className="text-2xl font-bold text-gray-900">Empresas</h1>
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-        <table className="w-full text-sm text-left">
-          <thead className="bg-gray-50 text-gray-500 font-medium uppercase text-xs">
-            <tr>
-              <th className="px-6 py-3">Nome</th>
-              <th className="px-6 py-3">CNPJ</th>
-              <th className="px-6 py-3">Plano</th>
-              <th className="px-6 py-3">Status</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {companies.map(c => (
-              <tr key={c.id}>
-                <td className="px-6 py-4 font-medium">{c.name}</td>
-                <td className="px-6 py-4">{c.cnpj}</td>
-                <td className="px-6 py-4">{c.plan}</td>
-                <td className="px-6 py-4">{c.status}</td>
+    <div className="p-6">
+      <h2 className="text-lg font-semibold text-gray-100 mb-4">
+        Empresas Clientes
+      </h2>
+      <div className="bg-slate-900 rounded-lg border border-slate-700 p-4">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm text-slate-100">
+            <thead>
+              <tr className="text-xs text-slate-400 border-b border-slate-700">
+                <th className="py-2 text-left">Empresa</th>
+                <th className="py-2 text-left">CNPJ</th>
+                <th className="py-2 text-left">Plano</th>
+                <th className="py-2 text-left">Status</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {companies.map((c) => (
+                <tr key={c.id} className="border-b border-slate-800 last:border-0">
+                  <td className="py-2">{c.name}</td>
+                  <td className="py-2 text-xs text-slate-300">{c.cnpj}</td>
+                  <td className="py-2 text-xs">{c.plan}</td>
+                  <td className="py-2 text-xs">
+                    {c.status} {c.isOverdue ? '(Inadimplente)' : ''}
+                  </td>
+                </tr>
+              ))}
+              {companies.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={4}
+                    className="py-4 text-center text-xs text-slate-400"
+                  >
+                    Nenhuma empresa cadastrada.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
 };
 
-// --- LAYOUTS ---
+// --------------------
+// Layouts protegidos
+// --------------------
 
 const TenantLayout = () => {
-  const { isLoading, error, currentUser } = useAppContext();
-  
-  if (isLoading) return <div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin" /></div>;
-  if (!currentUser) return <Navigate to="/login" replace />;
-  if (currentUser.role === UserRole.SUPER_ADMIN) return <Navigate to="/master" replace />;
-  if (error) return <div className="p-8 text-center text-red-600">{error}</div>;
+  const { isLoading, error } = useAppContext();
 
   return (
-    <div className="min-h-screen flex bg-gray-50/50">
-      <TenantSidebar />
-      <div className="flex-1 flex flex-col ml-64">
-        <TenantHeader />
-        <main className="flex-1 pt-16"><Outlet /></main>
+    <div className="min-h-screen flex flex-col">
+      <TopBar />
+      <div className="flex flex-1">
+        <TenantSidebar />
+        <main className="flex-1 bg-gray-50">
+          {isLoading && (
+            <div className="p-4 text-xs text-gray-500">Carregando...</div>
+          )}
+          {error && (
+            <div className="p-4 text-xs text-red-600 bg-red-50 border-b border-red-100">
+              {error}
+            </div>
+          )}
+          <Outlet />
+        </main>
       </div>
     </div>
   );
 };
 
 const MasterLayout = () => {
-  const { isLoading, error, currentUser } = useAppContext();
-  
-  if (isLoading) return <div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin" /></div>;
-  if (!currentUser) return <Navigate to="/login" replace />;
-  if (currentUser.role !== UserRole.SUPER_ADMIN) return <Navigate to="/" replace />;
-  if (error) return <div className="p-8 text-center text-red-600">{error}</div>;
+  const { isLoading, error } = useAppContext();
 
   return (
-    <div className="min-h-screen flex bg-gray-100">
-      <MasterSidebar />
-      <div className="flex-1 flex flex-col ml-64"><Outlet /></div>
+    <div className="min-h-screen flex flex-col bg-slate-950 text-slate-50">
+      <TopBar />
+      <div className="flex flex-1">
+        <MasterSidebar />
+        <main className="flex-1 bg-slate-950">
+          {isLoading && (
+            <div className="p-4 text-xs text-slate-400">Carregando...</div>
+          )}
+          {error && (
+            <div className="p-4 text-xs text-red-400 bg-red-950 border-b border-red-800">
+              {error}
+            </div>
+          )}
+          <Outlet />
+        </main>
+      </div>
     </div>
   );
 };
 
-// --- APP ---
+// --------------------
+// Login
+// --------------------
 
-const App = () => {
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [currentCompany, setCurrentCompany] = useState<Company | null>(null);
-  const [companies, setCompanies] = useState<Company[]>([]);
-  const [equipment, setEquipment] = useState<Equipment[]>([]);
-  const [tickets, setTickets] = useState<MaintenanceTicket[]>([]);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [statuses, setStatuses] = useState<EquipmentStatus[]>([]);
-  const [branches, setBranches] = useState<Branch[]>([]);
-  const [isLoading, setIsLoading] = useState(false); // Initial loading handled by login check
-  const [error, setError] = useState<string | null>(null);
+const LoginPage = () => {
+  const { login, error } = useAppContext();
+  const [mode, setMode] = useState<AuthMode>('tenant');
+  const [email, setEmail] = useState('admin@gestorit.com');
+  const [password, setPassword] = useState('123');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [localError, setLocalError] = useState<string | null>(null);
+  const navigate = useNavigate();
 
-  // Restore session
-  useEffect(() => {
-    const token = localStorage.getItem('gestorit_token');
-    const userStr = localStorage.getItem('gestorit_user');
-    if (token && userStr) {
-      setCurrentUser(JSON.parse(userStr));
-      // Trigger data load based on role
-    }
-  }, []);
-
-  // Load Data Effect
-  useEffect(() => {
-    if (!currentUser) return;
-
-    const loadData = async () => {
-      setIsLoading(true);
-      setError(null);
-      try {
-        if (currentUser.role === UserRole.SUPER_ADMIN) {
-          const [comps, trans] = await Promise.all([
-            masterApi.getCompanies(),
-            masterApi.getTransactions()
-          ]);
-          setCompanies(comps);
-          setTransactions(trans);
-        } else {
-          // Tenant Logic: Find associated companies
-          // For simplicity in this stage, fetch all companies the user has access to
-          // Ideally this comes from the /me endpoint or login response. 
-          // Here we simulate by fetching available companies from master (if allowed) or assuming user has companies attached.
-          // Since the prompt asks for real connection, let's assume login returns user.companies.
-          // We will fetch the first company's data.
-          
-          // NOTE: In a real scenario, we might hit an endpoint /v1/minhas-empresas
-          // For this stage, we'll try to get data for the ID stored in currentUser.companies[0] if exists
-          
-          if (currentUser.companies && currentUser.companies.length > 0) {
-             const companyId = currentUser.companies[0];
-             // Fetch basic company info (mocked endpoint call concept for now, or assume we have it)
-             // Let's just fetch equipments to verify connection
-             const [eq, tk, st, br] = await Promise.all([
-               tenantApi.getEquipments(companyId),
-               tenantApi.getMaintenanceTickets(companyId),
-               tenantApi.getEquipmentStatuses(companyId),
-               tenantApi.getBranches(companyId)
-             ]);
-             setEquipment(eq);
-             setTickets(tk);
-             setStatuses(st);
-             setBranches(br);
-             
-             // Create a fake company object just for context if we don't have the endpoint yet
-             setCurrentCompany({ id: companyId, name: 'Minha Empresa', active: true, status: 'ATIVA', plan: 'PRO', limits: {users:10, branches:2, equipments:100}, renewalDate: '', isOverdue: false, cnpj: '' });
-          }
-        }
-      } catch (err: any) {
-        console.error("Data load error", err);
-        if (err.response?.status !== 401) {
-          setError("Falha ao carregar dados do servidor.");
-        }
-      } finally {
-        setIsLoading(false);
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    setLocalError(null);
+    try {
+      await login(mode, email, password);
+      if (mode === 'master') {
+        navigate('/master');
+      } else {
+        navigate('/app');
       }
-    };
-
-    loadData();
-  }, [currentUser]);
-
-  const login = (token: string, user: User) => {
-    localStorage.setItem('gestorit_token', token);
-    localStorage.setItem('gestorit_user', JSON.stringify(user));
-    setCurrentUser(user);
-    setError(null);
+    } catch {
+      setLocalError('Credenciais inválidas ou erro no servidor.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
-
-  const logout = () => {
-    localStorage.removeItem('gestorit_token');
-    localStorage.removeItem('gestorit_user');
-    setCurrentUser(null);
-    setCurrentCompany(null);
-    setCompanies([]);
-    setEquipment([]);
-  };
-
-  const contextValue = useMemo(() => ({
-    currentUser, currentCompany, setCurrentCompany, equipment, setEquipment, tickets, setTickets,
-    companies, setCompanies, transactions, statuses, branches, isLoading, error, login, logout
-  }), [currentUser, currentCompany, equipment, tickets, companies, transactions, statuses, branches, isLoading, error]);
 
   return (
-    <AppContext.Provider value={contextValue}>
-      <HashRouter>
-        <Routes>
-          <Route path="/login" element={<LoginPage />} />
-          
-          {/* Tenant Routes */}
-          <Route path="/" element={<TenantLayout />}>
-            <Route index element={<Dashboard />} />
-            <Route path="equipamentos" element={<EquipmentList />} />
-            <Route path="manutencao" element={<MaintenanceKanban />} />
-            <Route path="usuarios" element={<div>Gestão Usuários</div>} />
-            <Route path="configuracoes" element={<div>Configurações</div>} />
-          </Route>
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-slate-950 to-slate-900">
+      <div className="bg-white/95 rounded-2xl shadow-2xl max-w-md w-full p-8 border border-slate-100">
+        <div className="flex items-center gap-2 mb-4">
+          <Building2 className="w-7 h-7 text-indigo-600" />
+          <div>
+            <h1 className="text-lg font-semibold text-gray-900">GestorIT</h1>
+            <p className="text-xs text-gray-500">
+              Controle centralizado de equipamentos e empresas.
+            </p>
+          </div>
+        </div>
 
-          {/* Master Routes */}
-          <Route path="/master" element={<MasterLayout />}>
-             <Route index element={<MasterDashboard />} />
-             <Route path="empresas" element={<MasterCompanyList />} />
-             <Route path="financeiro" element={<div>Financeiro</div>} />
-          </Route>
+        <div className="flex gap-2 mb-4 text-xs">
+          <button
+            type="button"
+            onClick={() => setMode('tenant')}
+            className={`flex-1 border rounded-full py-1 ${
+              mode === 'tenant'
+                ? 'bg-indigo-600 text-white border-indigo-600'
+                : 'bg-white text-gray-700 border-gray-200'
+            }`}
+          >
+            Área do Cliente
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode('master')}
+            className={`flex-1 border rounded-full py-1 ${
+              mode === 'master'
+                ? 'bg-slate-900 text-emerald-300 border-slate-900'
+                : 'bg-white text-gray-700 border-gray-200'
+            }`}
+          >
+            Painel Master
+          </button>
+        </div>
 
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </HashRouter>
-    </AppContext.Provider>
+        {(error || localError) && (
+          <div className="bg-red-50 text-red-700 border border-red-100 rounded-md px-3 py-2 text-xs mb-3">
+            {localError || error}
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">
+              Email
+            </label>
+            <input
+              type="email"
+              required
+              className="w-full border border-gray-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder={
+                mode === 'master'
+                  ? 'master@gestorit.com'
+                  : 'admin@gestorit.com'
+              }
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">
+              Senha
+            </label>
+            <input
+              type="password"
+              required
+              className="w-full border border-gray-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="******"
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={isSubmitting}
+            className="w-full mt-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium py-2 rounded-md flex items-center justify-center gap-2 disabled:opacity-60"
+          >
+            {isSubmitting ? (
+              <>
+                <span>Entrando...</span>
+              </>
+            ) : (
+              <span>Entrar</span>
+            )}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+// --------------------
+// Proteção de rotas
+// --------------------
+
+const RequireAuth = ({ children }: { children: JSX.Element }) => {
+  const { currentUser } = useAppContext();
+  const location = useLocation();
+
+  if (!currentUser) {
+    return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+  return children;
+};
+
+// --------------------
+// App (Router)
+// --------------------
+
+const App = () => {
+  return (
+    <React.StrictMode>
+      <AppProvider>
+        <HashRouter>
+          <Routes>
+            <Route path="/login" element={<LoginPage />} />
+
+            <Route
+              path="/app/*"
+              element={
+                <RequireAuth>
+                  <TenantLayout />
+                </RequireAuth>
+              }
+            >
+              <Route index element={<TenantDashboard />} />
+              <Route path="equipamentos" element={<EquipmentList />} />
+              <Route path="manutencao" element={<MaintenanceKanban />} />
+              <Route
+                path="usuarios"
+                element={
+                  <div className="p-6 text-sm text-gray-600">
+                    Gestão de usuários (em desenvolvimento).
+                  </div>
+                }
+              />
+              <Route
+                path="configuracoes"
+                element={
+                  <div className="p-6 text-sm text-gray-600">
+                    Configurações da empresa (em desenvolvimento).
+                  </div>
+                }
+              />
+            </Route>
+
+            <Route
+              path="/master/*"
+              element={
+                <RequireAuth>
+                  <MasterLayout />
+                </RequireAuth>
+              }
+            >
+              <Route index element={<MasterDashboard />} />
+              <Route path="empresas" element={<MasterCompanyList />} />
+              <Route
+                path="financeiro"
+                element={
+                  <div className="p-6 text-sm text-slate-100">
+                    Relatórios financeiros (em desenvolvimento).
+                  </div>
+                }
+              />
+            </Route>
+
+            {/* Redirecionar raiz para login */}
+            <Route path="/" element={<Navigate to="/login" replace />} />
+            <Route path="*" element={<Navigate to="/login" replace />} />
+          </Routes>
+        </HashRouter>
+      </AppProvider>
+    </React.StrictMode>
   );
 };
 

@@ -1,8 +1,8 @@
-
 import axios from 'axios';
 
-// Acesso seguro à variável de ambiente ou fallback para localhost
-const API_URL = import.meta.env?.VITE_API_URL || 'http://localhost:5000/api';
+// Usa variável de ambiente VITE_API_URL ou fallback para o backend local
+const API_URL =
+  import.meta.env?.VITE_API_URL || 'http://localhost:5000/api';
 
 const apiClient = axios.create({
   baseURL: API_URL,
@@ -11,11 +11,12 @@ const apiClient = axios.create({
   },
 });
 
-// Request interceptor: Adiciona o Token JWT se existir
+// Interceptor de request: adiciona token JWT, se existir
 apiClient.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('gestorit_token');
     if (token) {
+      config.headers = config.headers || {};
       config.headers['Authorization'] = `Bearer ${token}`;
     }
     return config;
@@ -23,7 +24,7 @@ apiClient.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Response interceptor: Trata erros globais e evita truncamento
+// Interceptor de response: trata erros globais simples
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
