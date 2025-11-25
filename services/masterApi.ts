@@ -17,6 +17,29 @@ export const masterApi = {
     return response.data.data;
   },
 
+  // Criar nova empresa (Painel Master)
+  createCompany: async (
+    payload: Partial<Company>
+  ): Promise<Company> => {
+    const response = await apiClient.post<ApiResponse<Company>>(
+      '/master/v1/empresas',
+      payload
+    );
+    return response.data.data;
+  },
+
+  // Atualizar empresa (opcional, já preparado)
+  updateCompany: async (
+    id: string,
+    payload: Partial<Company>
+  ): Promise<Company> => {
+    const response = await apiClient.patch<ApiResponse<Company>>(
+      `/master/v1/empresas/${id}`,
+      payload
+    );
+    return response.data.data;
+  },
+
   // Listagem de empresas
   getCompanies: async (): Promise<Company[]> => {
     const response = await apiClient.get<ApiResponse<Company[]>>(

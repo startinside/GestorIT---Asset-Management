@@ -88,6 +88,63 @@ def master_login():
 def list_companies():
     return _api_response(COMPANIES)
 
+# -------------------------------------------------------------------
+# Criar nova empresa (Master): /api/master/v1/empresas
+# -------------------------------------------------------------------
+@master_bp.post("/empresas")
+def create_company():
+    """
+    Cria uma nova empresa em memória, retornando o objeto completo.
+    """
+    payload = request.get_json(silent=True) or {}
+
+    # Gera um ID simples de teste
+    new_id = payload.get("id") or f"c{len(COMPANIES) + 1}"
+
+    company = {
+        "id": new_id,
+        "name": payload.get("name", "Nova Empresa"),
+        "cnpj": payload.get("cnpj", ""),
+        "active": payload.get("active", True),
+        "status": payload.get("status", "ATIVA"),
+        "plan": payload.get("plan", "STARTER"),
+        "contactEmail": payload.get("contactEmail", ""),
+        "limits": payload.get(
+            "limits",
+            {
+                "users": 10,
+                "branches": 5,
+                "equipments": 500,
+            },
+        ),
+        "renewalDate": payload.get("renewalDate", None),
+        "isOverdue": payload.get("isOverdue", False),
+    }
+
+    COMPANIES.append(company)
+    return _api_response(company, status_code=201)
+
+# -------------------------------------------------------------------
+# Atualizar empresa (Master): /api/master/v1/empresas/<id>
+# -------------------------------------------------------------------
+@master_bp.patch("/empresas/<company_id>")
+def update_company(company_id):
+    payload = request.get_json(silent=True) or {}
+
+    for c in COMPANIES:
+        if c["id"] == company_id:
+            # Atualiza apenas campos enviados
+            for key, value in payload.items():
+                if key in c:
+                    c[key] = value
+            return _api_response(c)
+
+    return _api_response(
+        None,
+        errors={"message": "Empresa não encontrada"},
+        status_code=404,
+    )
+
 
 # -------------------------------------------------------------------
 # Pagamentos (Master): /api/master/v1/pagamentos

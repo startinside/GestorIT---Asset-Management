@@ -70,9 +70,10 @@ interface AppContextType {
   logout: () => void;
   setCurrentCompanyId: (id: string | null) => void;
 
-  // NOVOS: para permitir que telas atualizem o estado local
+  // setters expostos para as telas
   setEquipment: React.Dispatch<React.SetStateAction<Equipment[]>>;
   setTickets: React.Dispatch<React.SetStateAction<MaintenanceTicket[]>>;
+  setCompanies: React.Dispatch<React.SetStateAction<Company[]>>;
 }
 
 const AppContext = createContext<AppContextType | null>(null);
@@ -240,6 +241,7 @@ const AppProvider = ({ children }: { children: ReactNode }) => {
 	  setCurrentCompanyId,
 	  setEquipment,
 	  setTickets,
+	  setCompanies,
     }),
     [
 	  mode,
@@ -256,6 +258,7 @@ const AppProvider = ({ children }: { children: ReactNode }) => {
 	  setCurrentCompanyId,
 	  setEquipment,
 	  setTickets,
+	  setCompanies,
     ]
   );
 
@@ -631,7 +634,12 @@ const EquipmentList = () => {
 };
 
 const MaintenanceKanban = () => {
-  const { tickets, setTickets } = useAppContext();
+  const {
+    tickets,
+    setTickets,
+    equipment,
+    currentCompanyId,
+  } = useAppContext();
 
   type KanbanStatus = MaintenanceTicket['kanbanStatus'];
 
@@ -661,31 +669,63 @@ const MaintenanceKanban = () => {
     },
   ];
 
+  const [creating, setCreating] = useState(false);
+  const [newTitle, setNewTitle] = useState('');
+  const [newDescription, setNewDescription] = useState('');
+  const [newEquipmentId, setNewEquipmentId] = useState<string>('');
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+
   const onDragStart = (e: React.DragEvent<HTMLDivElement>, id: string) => {
     e.dataTransfer.setData('ticketId', id);
+    setDraggingId(id);
   };
 
   const onDragOver = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
   };
 
+  const resolveNewStatus = (
+    columnId: string
+  ): KanbanStatus => {
+    if (columnId === 'Aberto') return 'Aberto';
+    if (columnId === 'Concluído') return 'Concluído';
+    // grupo "Em Andamento"
+    return 'Em Manutenção';
+  };
+
+  const handleMoveTicket = async (ticketId: string, columnId: string) => {
+    const newStatus = resolveNewStatus(columnId);
+
+    // Atualização otimista no front
+    setTickets((prev) =>
+      prev.map((t) =>
+        t.id === ticketId
+          ? { ...t, kanbanStatus: newStatus }
+          : t
+      )
+    );
+
+    // Se não tivermos companyId (algo errado), paramos aqui
+    if (!currentCompanyId) return;
+
+    try {
+      await tenantApi.moveTicket(
+        currentCompanyId,
+        ticketId,
+        newStatus
+      );
+    } catch (error) {
+      console.error('Erro ao atualizar chamado via API', error);
+      // opcional: rollback
+    }
+  };
+
   const onDrop = (e: React.DragEvent<HTMLDivElement>, columnId: string) => {
     e.preventDefault();
     const id = e.dataTransfer.getData('ticketId');
+    setDraggingId(null);
     if (!id) return;
-
-    setTickets((prev) =>
-      prev.map((t) => {
-        if (t.id !== id) return t;
-
-        let newStatus: KanbanStatus = t.kanbanStatus;
-        if (columnId === 'Aberto') newStatus = 'Aberto';
-        else if (columnId === 'Concluído') newStatus = 'Concluído';
-        else if (columnId === 'Em Andamento') newStatus = 'Em Manutenção';
-
-        return { ...t, kanbanStatus: newStatus };
-      })
-    );
+    handleMoveTicket(id, columnId);
   };
 
   const getPriorityClass = (priority: MaintenanceTicket['priority']) => {
@@ -711,6 +751,37 @@ const MaintenanceKanban = () => {
     return result;
   }, [tickets]);
 
+  const handleCreateTicket = async () => {
+    if (!currentCompanyId) {
+      alert('Empresa não selecionada.');
+      return;
+    }
+    if (!newTitle.trim()) return;
+
+    try {
+      setCreating(true);
+      const created = await tenantApi.createTicket(
+        currentCompanyId,
+        {
+          title: newTitle,
+          description: newDescription,
+          equipmentId: newEquipmentId || undefined,
+          kanbanStatus: 'Aberto',
+          priority: 'Média',
+        }
+      );
+      setTickets((prev) => [...prev, created]);
+      setNewTitle('');
+      setNewDescription('');
+      setNewEquipmentId('');
+    } catch (error) {
+      console.error('Erro ao criar chamado', error);
+      alert('Erro ao criar chamado. Verifique o console.');
+    } finally {
+      setCreating(false);
+    }
+  };
+
   return (
     <div className="p-6 h-[calc(100vh-64px)] flex flex-col">
       <div className="flex justify-between items-center mb-4">
@@ -727,13 +798,57 @@ const MaintenanceKanban = () => {
             <Calendar size={14} />
             Linha do Tempo
           </button>
-          <button className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-md text-xs font-medium flex items-center gap-1.5">
-            <Plus size={14} />
-            Novo Chamado
-          </button>
+          {/* Botão "Novo Chamado" abre um mini-form basicamente inline */}
         </div>
       </div>
 
+      {/* Form simples de novo chamado */}
+      <div className="bg-white border border-gray-200 rounded-md p-3 mb-4 flex flex-col md:flex-row gap-2 md:items-end">
+        <div className="flex-1">
+          <label className="block text-xs text-gray-500 mb-1">
+            Título do chamado
+          </label>
+          <input
+            type="text"
+            className="w-full border border-gray-200 rounded-md px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            value={newTitle}
+            onChange={(e) => setNewTitle(e.target.value)}
+            placeholder="Ex.: Computador travando"
+          />
+        </div>
+        <div className="flex-1">
+          <label className="block text-xs text-gray-500 mb-1">
+            Equipamento
+          </label>
+          <select
+            className="w-full border border-gray-200 rounded-md px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            value={newEquipmentId}
+            onChange={(e) => setNewEquipmentId(e.target.value)}
+          >
+            <option value="">Sem vínculo específico</option>
+            {equipment.map((eq) => (
+              <option key={eq.id} value={eq.id}>
+                {eq.internalId || eq.type} - {eq.model}
+              </option>
+            ))}
+          </select>
+        </div>
+        <button
+          type="button"
+          onClick={handleCreateTicket}
+          disabled={creating}
+          className="inline-flex items-center justify-center px-3 py-2 rounded-md bg-indigo-600 hover:bg-indigo-700 text-xs font-medium text-white disabled:opacity-60"
+        >
+          {creating ? 'Criando...' : (
+            <>
+              <Plus size={14} className="mr-1" />
+              Novo Chamado
+            </>
+          )}
+        </button>
+      </div>
+
+      {/* Colunas do Kanban */}
       <div className="flex-1 flex gap-4 overflow-x-auto pb-4">
         {columns.map((col) => (
           <div
@@ -754,7 +869,9 @@ const MaintenanceKanban = () => {
               {grouped[col.id]?.map((t) => (
                 <div
                   key={t.id}
-                  className="bg-white rounded-md border border-gray-200 p-2 text-xs cursor-move shadow-sm"
+                  className={`bg-white rounded-md border border-gray-200 p-2 text-xs cursor-move shadow-sm ${
+                    draggingId === t.id ? 'opacity-70' : ''
+                  }`}
                   draggable
                   onDragStart={(e) => onDragStart(e, t.id)}
                 >
@@ -837,13 +954,94 @@ const MasterDashboard = () => {
 };
 
 const MasterCompanyList = () => {
-  const { companies } = useAppContext();
+  const { companies, setCompanies } = useAppContext();
+  const [name, setName] = useState('');
+  const [cnpj, setCnpj] = useState('');
+  const [plan, setPlan] = useState('STARTER');
+  const [isSaving, setIsSaving] = useState(false);
+
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) return;
+
+    try {
+      setIsSaving(true);
+      const created = await masterApi.createCompany({
+        name,
+        cnpj,
+        plan,
+      });
+      setCompanies((prev) => [...prev, created]);
+      setName('');
+      setCnpj('');
+      setPlan('STARTER');
+    } catch (error) {
+      console.error('Erro ao criar empresa', error);
+      alert('Erro ao criar empresa. Verifique o console.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   return (
-    <div className="p-6">
-      <h2 className="text-lg font-semibold text-gray-100 mb-4">
+    <div className="p-6 space-y-4">
+      <h2 className="text-lg font-semibold text-gray-100">
         Empresas Clientes
       </h2>
+
+      {/* Formulário simples de nova empresa */}
+      <form
+        onSubmit={handleCreate}
+        className="bg-slate-900 rounded-lg border border-slate-700 p-4 flex flex-col md:flex-row gap-3 md:items-end"
+      >
+        <div className="flex-1">
+          <label className="block text-xs text-slate-400 mb-1">
+            Nome da empresa
+          </label>
+          <input
+            type="text"
+            className="w-full bg-slate-800 border border-slate-600 rounded-md px-2 py-1.5 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Ex.: Empresa Exemplo LTDA"
+          />
+        </div>
+        <div>
+          <label className="block text-xs text-slate-400 mb-1">
+            CNPJ
+          </label>
+          <input
+            type="text"
+            className="bg-slate-800 border border-slate-600 rounded-md px-2 py-1.5 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            value={cnpj}
+            onChange={(e) => setCnpj(e.target.value)}
+            placeholder="00.000.000/0001-00"
+          />
+        </div>
+        <div>
+          <label className="block text-xs text-slate-400 mb-1">
+            Plano
+          </label>
+          <select
+            className="bg-slate-800 border border-slate-600 rounded-md px-2 py-1.5 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            value={plan}
+            onChange={(e) => setPlan(e.target.value)}
+          >
+            <option value="STARTER">STARTER</option>
+            <option value="PRO">PRO</option>
+            <option value="ENTERPRISE">ENTERPRISE</option>
+          </select>
+        </div>
+        <button
+          type="submit"
+          disabled={isSaving}
+          className="inline-flex items-center justify-center px-3 py-2 rounded-md bg-indigo-600 hover:bg-indigo-500 text-xs font-medium text-white disabled:opacity-60"
+        >
+          {isSaving ? 'Salvando...' : 'Nova Empresa'}
+        </button>
+      </form>
+
+      {/* Tabela de empresas */}
       <div className="bg-slate-900 rounded-lg border border-slate-700 p-4">
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-slate-100">
@@ -857,12 +1055,18 @@ const MasterCompanyList = () => {
             </thead>
             <tbody>
               {companies.map((c) => (
-                <tr key={c.id} className="border-b border-slate-800 last:border-0">
+                <tr
+                  key={c.id}
+                  className="border-b border-slate-800 last:border-0"
+                >
                   <td className="py-2">{c.name}</td>
-                  <td className="py-2 text-xs text-slate-300">{c.cnpj}</td>
+                  <td className="py-2 text-xs text-slate-300">
+                    {c.cnpj}
+                  </td>
                   <td className="py-2 text-xs">{c.plan}</td>
                   <td className="py-2 text-xs">
-                    {c.status} {c.isOverdue ? '(Inadimplente)' : ''}
+                    {c.status}{' '}
+                    {c.isOverdue ? '(Inadimplente)' : ''}
                   </td>
                 </tr>
               ))}

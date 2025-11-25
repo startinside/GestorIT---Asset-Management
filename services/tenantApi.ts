@@ -30,6 +30,37 @@ export const tenantApi = {
     return response.data.data;
   },
 
+  // Criar novo chamado de manutenção
+  createTicket: async (
+    companyId: string,
+    payload: Partial<MaintenanceTicket>
+  ): Promise<MaintenanceTicket> => {
+    const response = await apiClient.post<
+      ApiResponse<MaintenanceTicket>
+    >('/v1/chamados', payload, {
+      headers: { 'X-Company-Id': companyId },
+    });
+
+    return response.data.data;
+  },
+
+  // Atualizar coluna Kanban do chamado
+  moveTicket: async (
+    companyId: string,
+    ticketId: string,
+    newStatus: MaintenanceTicket['kanbanStatus']
+  ): Promise<MaintenanceTicket> => {
+    const response = await apiClient.patch<
+      ApiResponse<MaintenanceTicket>
+    >(`/v1/chamados/${ticketId}/kanban`, {
+      kanbanStatus: newStatus,
+    }, {
+      headers: { 'X-Company-Id': companyId },
+    });
+
+    return response.data.data;
+  },
+
   // Chamados de manutenção
   getMaintenanceTickets: async (
     companyId: string

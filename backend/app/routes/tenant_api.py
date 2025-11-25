@@ -167,6 +167,66 @@ def list_tickets():
     items = [t for t in TICKETS if t["companyId"] == company_id]
     return _api_response(items)
 
+# -------------------------------------------------------------------
+# Criar novo chamado: /api/v1/chamados
+# -------------------------------------------------------------------
+@tenant_bp.post("/chamados")
+def create_ticket():
+    company_id = _get_company_id_from_header()
+    payload = request.get_json(silent=True) or {}
+
+    new_id = payload.get("id") or f"tk{len(TICKETS) + 1}"
+
+    ticket = {
+        "id": new_id,
+        "companyId": company_id,
+        "equipmentId": payload.get("equipmentId"),
+        "title": payload.get("title", "Novo chamado"),
+        "description": payload.get("description", ""),
+        "kanbanStatus": payload.get("kanbanStatus", "Aberto"),
+        "priority": payload.get("priority", "Média"),
+        "responsibleId": payload.get("responsibleId"),
+        "createdAt": payload.get("createdAt"),
+        "dueDate": payload.get("dueDate"),
+        "completedAt": payload.get("completedAt"),
+    }
+
+    TICKETS.append(ticket)
+    return _api_response(ticket, status_code=201)
+
+# -------------------------------------------------------------------
+# Atualizar status Kanban do chamado: /api/v1/chamados/<ticket_id>/kanban
+# -------------------------------------------------------------------
+@tenant_bp.patch("/chamados/<ticket_id>/kanban")
+def update_ticket_kanban(ticket_id):
+    company_id = _get_company_id_from_header()
+    payload = request.get_json(silent=True) or {}
+
+    new_status = payload.get("kanbanStatus")
+    if not new_status:
+        return _api_response(
+            None,
+            errors={"message": "Campo 'kanbanStatus' é obrigatório"},
+            status_code=400,
+        )
+
+    for t in TICKETS:
+        if t["id"] == ticket_id and t["companyId"] == company_id:
+            t["kanbanStatus"] = new_status
+
+            # Opcional: atualizar também prioridade/responsável se vierem
+            if "priority" in payload:
+                t["priority"] = payload["priority"]
+            if "responsibleId" in payload:
+                t["responsibleId"] = payload["responsibleId"]
+
+            return _api_response(t)
+
+    return _api_response(
+        None,
+        errors={"message": "Chamado não encontrado"},
+        status_code=404,
+    )
 
 # -------------------------------------------------------------------
 # Estados de equipamento: /api/v1/estados_equipamento
