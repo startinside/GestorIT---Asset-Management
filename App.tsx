@@ -27,6 +27,10 @@ import {
   DollarSign,
   Bell,
   ShieldAlert,
+  Search,
+  Filter,
+  Calendar,
+  Plus,
 } from 'lucide-react';
 import {
   Company,
@@ -65,6 +69,10 @@ interface AppContextType {
   login: (mode: AuthMode, email: string, password: string) => Promise<void>;
   logout: () => void;
   setCurrentCompanyId: (id: string | null) => void;
+
+  // NOVOS: para permitir que telas atualizem o estado local
+  setEquipment: React.Dispatch<React.SetStateAction<Equipment[]>>;
+  setTickets: React.Dispatch<React.SetStateAction<MaintenanceTicket[]>>;
 }
 
 const AppContext = createContext<AppContextType | null>(null);
@@ -216,33 +224,38 @@ const AppProvider = ({ children }: { children: ReactNode }) => {
 
   const value: AppContextType = useMemo(
     () => ({
-      mode,
-      currentUser,
-      currentCompanyId,
-      equipment,
-      tickets,
-      companies,
-      transactions,
-      statuses,
-      branches,
-      isLoading,
-      error,
-      login,
-      logout,
-      setCurrentCompanyId,
+	  mode,
+	  currentUser,
+	  currentCompanyId,
+	  equipment,
+	  tickets,
+	  companies,
+	  transactions,
+	  statuses,
+	  branches,
+	  isLoading,
+	  error,
+	  login,
+	  logout,
+	  setCurrentCompanyId,
+	  setEquipment,
+	  setTickets,
     }),
     [
-      mode,
-      currentUser,
-      currentCompanyId,
-      equipment,
-      tickets,
-      companies,
-      transactions,
-      statuses,
-      branches,
-      isLoading,
-      error,
+	  mode,
+	  currentUser,
+	  currentCompanyId,
+	  equipment,
+	  tickets,
+	  companies,
+	  transactions,
+	  statuses,
+	  branches,
+	  isLoading,
+	  error,
+	  setCurrentCompanyId,
+	  setEquipment,
+	  setTickets,
     ]
   );
 
@@ -490,47 +503,122 @@ const TenantDashboard = () => {
 
 const EquipmentList = () => {
   const { equipment, statuses, branches } = useAppContext();
+  const [search, setSearch] = useState('');
+  const [filterStatus, setFilterStatus] = useState<string>('');
+
+  const filteredEquipment = useMemo(
+    () =>
+      equipment.filter((eq) => {
+        const term = search.toLowerCase();
+        const matchesSearch =
+          !term ||
+          eq.type.toLowerCase().includes(term) ||
+          eq.brand.toLowerCase().includes(term) ||
+          eq.model.toLowerCase().includes(term) ||
+          eq.serialNumber.toLowerCase().includes(term) ||
+          (eq.internalId ?? '').toLowerCase().includes(term);
+
+        const matchesStatus = filterStatus
+          ? eq.statusId === filterStatus
+          : true;
+
+        return matchesSearch && matchesStatus;
+      }),
+    [equipment, search, filterStatus]
+  );
+
+  const renderStatusBadge = (statusId: string) => {
+    const st = statuses.find((s) => s.id === statusId);
+    if (!st) return <span className="text-xs text-gray-400">-</span>;
+
+    return (
+      <span
+        className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium"
+        style={{ backgroundColor: `${st.color}20`, color: st.color }}
+      >
+        {st.name}
+      </span>
+    );
+  };
 
   return (
     <div className="p-6 space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-4">
         <h2 className="text-lg font-semibold text-gray-900">
           Equipamentos cadastrados
         </h2>
       </div>
-      <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4">
+
+      <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4 space-y-4">
+        {/* Barra de busca + filtro */}
+        <div className="flex flex-col md:flex-row md:items-center gap-3">
+          <div className="relative flex-1 min-w-[200px]">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+              <Search size={14} />
+            </span>
+            <input
+              type="text"
+              placeholder="Buscar por tipo, marca, modelo, série ou código interno..."
+              className="w-full pl-9 pr-3 py-2 rounded-md border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center gap-1 text-xs text-gray-500">
+              <Filter size={14} />
+              Filtro:
+            </span>
+            <select
+              className="text-sm border border-gray-200 rounded-md px-2 py-1 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+            >
+              <option value="">Todos os estados</option>
+              {statuses.map((st) => (
+                <option key={st.id} value={st.id}>
+                  {st.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* Tabela */}
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs text-gray-500 border-b">
-                <th className="py-2">Interno</th>
-                <th className="py-2">Tipo</th>
-                <th className="py-2">Modelo</th>
-                <th className="py-2">Filial</th>
-                <th className="py-2">Estado</th>
+                <th className="py-2 px-2">Interno</th>
+                <th className="py-2 px-2">Tipo</th>
+                <th className="py-2 px-2">Modelo</th>
+                <th className="py-2 px-2">Filial</th>
+                <th className="py-2 px-2">Estado</th>
               </tr>
             </thead>
             <tbody>
-              {equipment.map((eq) => {
-                const st = statuses.find((s) => s.id === eq.statusId);
+              {filteredEquipment.map((eq) => {
                 const br = branches.find((b) => b.id === eq.branchId);
                 return (
                   <tr key={eq.id} className="border-b last:border-0">
-                    <td className="py-2">{eq.internalId || '-'}</td>
-                    <td className="py-2">{eq.type}</td>
-                    <td className="py-2">{eq.model}</td>
-                    <td className="py-2">{br?.name || '-'}</td>
-                    <td className="py-2">{st?.name || '-'}</td>
+                    <td className="py-2 px-2">{eq.internalId || '-'}</td>
+                    <td className="py-2 px-2">{eq.type}</td>
+                    <td className="py-2 px-2">{eq.model}</td>
+                    <td className="py-2 px-2">{br?.name || '-'}</td>
+                    <td className="py-2 px-2">
+                      {renderStatusBadge(eq.statusId)}
+                    </td>
                   </tr>
                 );
               })}
-              {equipment.length === 0 && (
+              {filteredEquipment.length === 0 && (
                 <tr>
                   <td
                     colSpan={5}
                     className="py-4 text-center text-xs text-gray-500"
                   >
-                    Nenhum equipamento cadastrado.
+                    Nenhum equipamento encontrado.
                   </td>
                 </tr>
               )}
@@ -543,54 +631,156 @@ const EquipmentList = () => {
 };
 
 const MaintenanceKanban = () => {
-  const { tickets } = useAppContext();
+  const { tickets, setTickets } = useAppContext();
+
+  type KanbanStatus = MaintenanceTicket['kanbanStatus'];
+
+  const columns: {
+    id: string;
+    title: string;
+    match: KanbanStatus[];
+    color: string;
+  }[] = [
+    {
+      id: 'Aberto',
+      title: 'Aberto',
+      match: ['Aberto'],
+      color: 'border-t-4 border-blue-500',
+    },
+    {
+      id: 'Em Andamento',
+      title: 'Em Andamento',
+      match: ['Em Manutenção', 'Em Análise', 'Aguardando Peça'],
+      color: 'border-t-4 border-yellow-500',
+    },
+    {
+      id: 'Concluído',
+      title: 'Concluído',
+      match: ['Concluído'],
+      color: 'border-t-4 border-green-500',
+    },
+  ];
+
+  const onDragStart = (e: React.DragEvent<HTMLDivElement>, id: string) => {
+    e.dataTransfer.setData('ticketId', id);
+  };
+
+  const onDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+  };
+
+  const onDrop = (e: React.DragEvent<HTMLDivElement>, columnId: string) => {
+    e.preventDefault();
+    const id = e.dataTransfer.getData('ticketId');
+    if (!id) return;
+
+    setTickets((prev) =>
+      prev.map((t) => {
+        if (t.id !== id) return t;
+
+        let newStatus: KanbanStatus = t.kanbanStatus;
+        if (columnId === 'Aberto') newStatus = 'Aberto';
+        else if (columnId === 'Concluído') newStatus = 'Concluído';
+        else if (columnId === 'Em Andamento') newStatus = 'Em Manutenção';
+
+        return { ...t, kanbanStatus: newStatus };
+      })
+    );
+  };
+
+  const getPriorityClass = (priority: MaintenanceTicket['priority']) => {
+    switch (priority) {
+      case 'Crítica':
+        return 'bg-red-100 text-red-800';
+      case 'Alta':
+        return 'bg-orange-100 text-orange-800';
+      case 'Média':
+        return 'bg-yellow-100 text-yellow-800';
+      default:
+        return 'bg-blue-100 text-blue-800';
+    }
+  };
 
   const grouped = useMemo(() => {
-    const groups: Record<string, MaintenanceTicket[]> = {};
-    for (const t of tickets) {
-      const col = t.kanbanStatus || 'Aberto';
-      if (!groups[col]) groups[col] = [];
-      groups[col].push(t);
-    }
-    return groups;
+    const result: Record<string, MaintenanceTicket[]> = {};
+    columns.forEach((col) => {
+      result[col.id] = tickets.filter((t) =>
+        col.match.includes(t.kanbanStatus)
+      );
+    });
+    return result;
   }, [tickets]);
 
-  const columns = ['Aberto', 'Em Andamento', 'Concluído'];
-
   return (
-    <div className="p-6">
-      <h2 className="text-lg font-semibold text-gray-900 mb-4">
-        Chamados de manutenção
-      </h2>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+    <div className="p-6 h-[calc(100vh-64px)] flex flex-col">
+      <div className="flex justify-between items-center mb-4">
+        <div>
+          <h2 className="text-lg font-semibold text-gray-900">
+            Quadro de Manutenção
+          </h2>
+          <p className="text-xs text-gray-500">
+            Arraste os chamados entre as colunas para atualizar o status.
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <button className="bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 px-3 py-1.5 rounded-md text-xs font-medium flex items-center gap-1.5">
+            <Calendar size={14} />
+            Linha do Tempo
+          </button>
+          <button className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-md text-xs font-medium flex items-center gap-1.5">
+            <Plus size={14} />
+            Novo Chamado
+          </button>
+        </div>
+      </div>
+
+      <div className="flex-1 flex gap-4 overflow-x-auto pb-4">
         {columns.map((col) => (
           <div
-            key={col}
-            className="bg-gray-50 rounded-lg border border-gray-200 p-3 flex flex-col"
+            key={col.id}
+            className={`flex-1 min-w-[260px] bg-gray-50 rounded-lg flex flex-col border border-gray-200 ${col.color}`}
+            onDragOver={onDragOver}
+            onDrop={(e) => onDrop(e, col.id)}
           >
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-semibold text-gray-800">{col}</span>
-              <span className="text-xs text-gray-500">
-                {grouped[col]?.length || 0}
+            <div className="px-3 py-2 flex items-center justify-between sticky top-0 bg-gray-50 rounded-t-lg z-10">
+              <span className="text-xs font-semibold text-gray-700">
+                {col.title}
+              </span>
+              <span className="bg-gray-200 text-gray-700 px-2 py-0.5 rounded-full text-[10px]">
+                {grouped[col.id]?.length || 0}
               </span>
             </div>
-            <div className="space-y-2 max-h-96 overflow-y-auto">
-              {grouped[col]?.map((t) => (
+            <div className="px-3 pb-3 space-y-2 overflow-y-auto flex-1">
+              {grouped[col.id]?.map((t) => (
                 <div
                   key={t.id}
-                  className="bg-white rounded-md border border-gray-200 p-2 text-xs"
+                  className="bg-white rounded-md border border-gray-200 p-2 text-xs cursor-move shadow-sm"
+                  draggable
+                  onDragStart={(e) => onDragStart(e, t.id)}
                 >
-                  <div className="font-semibold text-gray-800">
-                    {t.title || 'Chamado'}
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="font-semibold text-gray-800 truncate">
+                      {t.title || 'Chamado'}
+                    </div>
+                    <span
+                      className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium ${getPriorityClass(
+                        t.priority
+                      )}`}
+                    >
+                      {t.priority}
+                    </span>
                   </div>
-                  <div className="text-gray-600 mt-1 line-clamp-2">
-                    {t.description}
-                  </div>
+                  {t.description && (
+                    <div className="text-gray-600 mt-1 line-clamp-2">
+                      {t.description}
+                    </div>
+                  )}
                   <div className="mt-2 text-[10px] text-gray-400">
                     Vencimento: {t.dueDate || '-'}
                   </div>
                 </div>
-              )) || (
+              ))}
+              {!grouped[col.id]?.length && (
                 <div className="text-[11px] text-gray-400">
                   Nenhum chamado nesta coluna.
                 </div>
