@@ -1,4 +1,7 @@
-from flask import Blueprint, request, jsonify
+import os
+
+from flask import Blueprint, request, jsonify, current_app, send_from_directory
+from werkzeug.utils import secure_filename
 
 tenant_bp = Blueprint("tenant_api", __name__)
 
@@ -14,6 +17,7 @@ TENANT_USERS = [
         "role": "admin_empresa",
         "avatarUrl": None,
         "companies": ["c1"],
+        "active": True,  # NOVO
     }
 ]
 
@@ -71,6 +75,7 @@ EQUIPMENTS = [
         "description": "Notebook do financeiro",
         "acquisitionDate": "2024-01-10",
         "imageUrl": None,
+        "active": True,  # <-- NOVO
     },
     {
         "id": "eq2",
@@ -86,6 +91,7 @@ EQUIPMENTS = [
         "description": "Estação de trabalho da recepção",
         "acquisitionDate": "2023-11-05",
         "imageUrl": None,
+        "active": True,  # <-- NOVO
     },
 ]
 
@@ -147,6 +153,75 @@ def tenant_login():
         status_code=401,
     )
 
+# -------------------------------------------------------------------
+# Usuários: /api/v1/usuarios
+# -------------------------------------------------------------------
+
+@tenant_bp.get("/usuarios")
+def list_tenant_users():
+    company_id = _get_company_id_from_header()
+    items = [u for u in TENANT_USERS if company_id in u["companies"]]
+    return _api_response(items)
+
+
+@tenant_bp.post("/usuarios")
+def create_tenant_user():
+    payload = request.get_json(silent=True) or {}
+    company_id = _get_company_id_from_header()
+
+    new_user = {
+        "id": f"u-{len(TENANT_USERS) + 1}",
+        "name": payload.get("name"),
+        "email": payload.get("email"),
+        "role": payload.get("role") or "leitura",
+        "avatarUrl": payload.get("avatarUrl"),
+        "active": payload.get("active", True),
+        "companies": [company_id],
+    }
+
+    TENANT_USERS.append(new_user)
+    return _api_response(new_user, status_code=201)
+
+@tenant_bp.patch("/usuarios/<user_id>")
+def update_tenant_user(user_id):
+    payload = request.get_json(silent=True) or {}
+
+    for u in TENANT_USERS:
+        if u["id"] == user_id:
+            # Atualiza apenas campos esperados
+            for field in ["name", "email", "role", "active", "avatarUrl"]:
+                if field in payload:
+                    u[field] = payload[field]
+            return _api_response(u)
+
+    return _api_response(
+        None,
+        errors={"message": "User not found"},
+        status_code=404,
+    )
+
+@tenant_bp.post("/usuarios/<user_id>/suspender")
+def suspend_tenant_user(user_id):
+    payload = request.get_json() or {}
+    active = payload.get("active", True)
+
+    for u in TENANT_USERS:
+        if u["id"] == user_id:
+            u["active"] = active
+            return _api_response(u)
+
+    return _api_response(None, errors={"message": "User not found"}, status_code=404)
+
+
+@tenant_bp.delete("/usuarios/<user_id>")
+def delete_tenant_user(user_id):
+    global TENANT_USERS
+    before = len(TENANT_USERS)
+    TENANT_USERS = [u for u in TENANT_USERS if u["id"] != user_id]
+
+    deleted = len(TENANT_USERS) < before
+    return _api_response({"deleted": deleted})
+    
 
 # -------------------------------------------------------------------
 # Equipamentos: /api/v1/equipamentos
@@ -156,6 +231,97 @@ def list_equipments():
     company_id = _get_company_id_from_header()
     items = [e for e in EQUIPMENTS if e["companyId"] == company_id]
     return _api_response(items)
+
+# -------------------------------------------------------------------
+# Criar novo equipamento: POST /api/v1/equipamentos
+# -------------------------------------------------------------------
+@tenant_bp.post("/equipamentos")
+def create_equipment():
+    company_id = _get_company_id_from_header()
+    payload = request.get_json(silent=True) or {}
+
+    new_id = payload.get("id") or f"eq{len(EQUIPMENTS) + 1}"
+
+    equipment = {
+        "id": new_id,
+        "companyId": company_id,
+        "branchId": payload.get("branchId"),
+        "type": payload.get("type", "Outro"),
+        "brand": payload.get("brand", ""),
+        "model": payload.get("model", ""),
+        "serialNumber": payload.get("serialNumber", ""),
+        "internalId": payload.get("internalId") or f"AUTO-{len(EQUIPMENTS)+1}",
+        "patrimonyId": payload.get("patrimonyId", ""),
+        "statusId": payload.get("statusId", None),
+        "description": payload.get("description", ""),
+        "acquisitionDate": payload.get("acquisitionDate", None),
+        "imageUrl": payload.get("imageUrl", None),
+        "active": payload.get("active", True),
+    }
+
+    EQUIPMENTS.append(equipment)
+    return _api_response(equipment, status_code=201)
+
+# -------------------------------------------------------------------
+# Atualizar equipamento: PATCH /api/v1/equipamentos/<equipment_id>
+# -------------------------------------------------------------------
+@tenant_bp.patch("/equipamentos/<equipment_id>")
+def update_equipment(equipment_id):
+    company_id = _get_company_id_from_header()
+    payload = request.get_json(silent=True) or {}
+
+    for eq in EQUIPMENTS:
+        if eq["id"] == equipment_id and eq["companyId"] == company_id:
+            # Atualiza apenas os campos enviados
+            for key, value in payload.items():
+                if key in eq:
+                    eq[key] = value
+            return _api_response(eq)
+
+    return _api_response(
+        None,
+        errors={"message": "Equipamento não encontrado"},
+        status_code=404,
+    )
+
+# -------------------------------------------------------------------
+# Suspender ou reativar equipamento: POST /api/v1/equipamentos/<id>/suspender
+# body: { "active": false } ou { "active": true }
+# -------------------------------------------------------------------
+@tenant_bp.post("/equipamentos/<equipment_id>/suspender")
+def suspend_equipment(equipment_id):
+    company_id = _get_company_id_from_header()
+    payload = request.get_json(silent=True) or {}
+    active = payload.get("active", False)
+
+    for eq in EQUIPMENTS:
+        if eq["id"] == equipment_id and eq["companyId"] == company_id:
+            eq["active"] = active
+            return _api_response(eq)
+
+    return _api_response(
+        None,
+        errors={"message": "Equipamento não encontrado"},
+        status_code=404,
+    )
+
+# -------------------------------------------------------------------
+# Excluir equipamento: DELETE /api/v1/equipamentos/<id>
+# -------------------------------------------------------------------
+@tenant_bp.delete("/equipamentos/<equipment_id>")
+def delete_equipment(equipment_id):
+    company_id = _get_company_id_from_header()
+
+    for idx, eq in enumerate(EQUIPMENTS):
+        if eq["id"] == equipment_id and eq["companyId"] == company_id:
+            EQUIPMENTS.pop(idx)
+            return _api_response({"deleted": True})
+
+    return _api_response(
+        None,
+        errors={"message": "Equipamento não encontrado"},
+        status_code=404,
+    )
 
 
 # -------------------------------------------------------------------
@@ -241,6 +407,18 @@ def list_statuses():
     ]
     return _api_response(items)
 
+@tenant_bp.post("/equipamentos/<equipment_id>/duplicar")
+def duplicate_equipment(equipment_id):
+    for e in EQUIPMENTS:
+        if e["id"] == equipment_id:
+            new_item = e.copy()
+            new_item["id"] = f"eq{len(EQUIPMENTS)+1}"
+            new_item["internalId"] = f"DUP-{new_item['internalId']}"
+            EQUIPMENTS.append(new_item)
+            return _api_response(new_item)
+
+    return _api_response(None, errors={"message": "Equipment not found"}, status_code=404)
+
 
 # -------------------------------------------------------------------
 # Filiais: /api/v1/filiais
@@ -250,3 +428,45 @@ def list_branches():
     company_id = _get_company_id_from_header()
     items = [b for b in BRANCHES if b["companyId"] == company_id]
     return _api_response(items)
+
+
+# -------------------------------------------------------------------
+# Upload de avatar (arquivo do dispositivo)
+# -------------------------------------------------------------------
+@tenant_bp.post("/upload/avatar")
+def upload_avatar():
+    """
+    Recebe um arquivo de imagem e salva em static/avatars.
+    Retorna uma URL pública para ser usada em avatarUrl.
+    """
+    if "file" not in request.files:
+        return _api_response(
+            None,
+            errors={"message": "Nenhum arquivo enviado (campo 'file')"},
+            status_code=400,
+        )
+
+    file = request.files["file"]
+    if file.filename == "":
+        return _api_response(
+            None,
+            errors={"message": "Arquivo sem nome"},
+            status_code=400,
+        )
+
+    filename = secure_filename(file.filename)
+    upload_folder = current_app.config.get("AVATAR_UPLOAD_FOLDER")
+    if not upload_folder:
+        return _api_response(
+            None,
+            errors={"message": "Configuração de upload não encontrada"},
+            status_code=500,
+        )
+
+    save_path = os.path.join(upload_folder, filename)
+    file.save(save_path)
+
+    # URL pública do avatar (servida via /static/avatars/<filename>)
+    public_url = f"/static/avatars/{filename}"
+
+    return _api_response({"url": public_url}, status_code=201)

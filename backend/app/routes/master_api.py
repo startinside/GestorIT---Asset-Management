@@ -127,16 +127,28 @@ def create_company():
 # -------------------------------------------------------------------
 # Atualizar empresa (Master): /api/master/v1/empresas/<id>
 # -------------------------------------------------------------------
+# -------------------------------------------------------------------
+# Empresas (Master): editar empresa
+# -------------------------------------------------------------------
 @master_bp.patch("/empresas/<company_id>")
 def update_company(company_id):
     payload = request.get_json(silent=True) or {}
-
     for c in COMPANIES:
         if c["id"] == company_id:
-            # Atualiza apenas campos enviados
-            for key, value in payload.items():
-                if key in c:
-                    c[key] = value
+            # Só atualiza campos simples que chegarem no payload
+            for field in [
+                "name",
+                "cnpj",
+                "plan",
+                "active",
+                "status",
+                "contactEmail",
+                "limits",
+                "renewalDate",
+                "isOverdue",
+            ]:
+                if field in payload:
+                    c[field] = payload[field]
             return _api_response(c)
 
     return _api_response(
@@ -144,6 +156,19 @@ def update_company(company_id):
         errors={"message": "Empresa não encontrada"},
         status_code=404,
     )
+
+
+# -------------------------------------------------------------------
+# Empresas (Master): excluir empresa
+# -------------------------------------------------------------------
+@master_bp.delete("/empresas/<company_id>")
+def delete_company(company_id):
+    global COMPANIES
+    before = len(COMPANIES)
+    COMPANIES = [c for c in COMPANIES if c["id"] != company_id]
+    deleted = len(COMPANIES) < before
+    return _api_response({"deleted": deleted})
+
 
 
 # -------------------------------------------------------------------

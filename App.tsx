@@ -31,6 +31,9 @@ import {
   Filter,
   Calendar,
   Plus,
+  X,
+  Trash2,
+  Copy,
 } from 'lucide-react';
 import {
   Company,
@@ -62,6 +65,7 @@ interface AppContextType {
   transactions: Transaction[];
   statuses: EquipmentStatus[];
   branches: Branch[];
+  users: User[]; // NOVO: usuários do tenant
 
   isLoading: boolean;
   error: string | null;
@@ -70,10 +74,10 @@ interface AppContextType {
   logout: () => void;
   setCurrentCompanyId: (id: string | null) => void;
 
-  // setters expostos para as telas
   setEquipment: React.Dispatch<React.SetStateAction<Equipment[]>>;
   setTickets: React.Dispatch<React.SetStateAction<MaintenanceTicket[]>>;
   setCompanies: React.Dispatch<React.SetStateAction<Company[]>>;
+  setUsers: React.Dispatch<React.SetStateAction<User[]>>; // NOVO
 }
 
 const AppContext = createContext<AppContextType | null>(null);
@@ -101,6 +105,7 @@ const AppProvider = ({ children }: { children: ReactNode }) => {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [statuses, setStatuses] = useState<EquipmentStatus[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
+  const [users, setUsers] = useState<User[]>([]); // NOVO
 
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -142,27 +147,36 @@ const AppProvider = ({ children }: { children: ReactNode }) => {
           ]);
           setCompanies(companiesRes);
           setTransactions(transactionsRes);
-        } else if (mode === 'tenant') {
-          const companyId =
-            currentCompanyId ||
-            currentUser.companies?.[0] ||
-            'c1'; // fallback simples
+		} else if (mode === 'tenant') {
+		  const companyId =
+			currentCompanyId ||
+			currentUser.companies?.[0] ||
+			'c1'; // fallback simples
 
-          setCurrentCompanyId(companyId);
-          localStorage.setItem('gestorit_company_id', companyId);
+		  setCurrentCompanyId(companyId);
+		  localStorage.setItem('gestorit_company_id', companyId);
 
-          const [equipRes, ticketsRes, statusesRes, branchesRes] =
-            await Promise.all([
-              tenantApi.getEquipments(companyId),
-              tenantApi.getMaintenanceTickets(companyId),
-              tenantApi.getEquipmentStatuses(companyId),
-              tenantApi.getBranches(companyId),
-            ]);
-          setEquipment(equipRes);
-          setTickets(ticketsRes);
-          setStatuses(statusesRes);
-          setBranches(branchesRes);
-        }
+		  const [
+			equipRes,
+			ticketsRes,
+			statusesRes,
+			branchesRes,
+			usersRes,
+		  ] = await Promise.all([
+			tenantApi.getEquipments(companyId),
+			tenantApi.getMaintenanceTickets(companyId),
+			tenantApi.getEquipmentStatuses(companyId),
+			tenantApi.getBranches(companyId),
+			tenantApi.getUsers(companyId),
+		  ]);
+
+		  setEquipment(equipRes);
+		  setTickets(ticketsRes);
+		  setStatuses(statusesRes);
+		  setBranches(branchesRes);
+		  setUsers(usersRes);
+		}
+
       } catch (err: any) {
         console.error(err);
         setError('Erro ao carregar dados iniciais.');
@@ -221,6 +235,7 @@ const AppProvider = ({ children }: { children: ReactNode }) => {
     setTransactions([]);
     setStatuses([]);
     setBranches([]);
+	setUsers([]); // <--- limpar também
   };
 
   const value: AppContextType = useMemo(
@@ -234,6 +249,7 @@ const AppProvider = ({ children }: { children: ReactNode }) => {
 	  transactions,
 	  statuses,
 	  branches,
+	  users, // NOVO
 	  isLoading,
 	  error,
 	  login,
@@ -242,6 +258,7 @@ const AppProvider = ({ children }: { children: ReactNode }) => {
 	  setEquipment,
 	  setTickets,
 	  setCompanies,
+	  setUsers, // NOVO
     }),
     [
 	  mode,
@@ -253,12 +270,9 @@ const AppProvider = ({ children }: { children: ReactNode }) => {
 	  transactions,
 	  statuses,
 	  branches,
+	  users,            // NOVO
 	  isLoading,
 	  error,
-	  setCurrentCompanyId,
-	  setEquipment,
-	  setTickets,
-	  setCompanies,
     ]
   );
 
@@ -505,9 +519,32 @@ const TenantDashboard = () => {
 };
 
 const EquipmentList = () => {
-  const { equipment, statuses, branches } = useAppContext();
+  const {
+    equipment,
+    statuses,
+    branches,
+    currentCompanyId,
+    setEquipment,
+  } = useAppContext();
+
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('');
+
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [editing, setEditing] = useState<Equipment | null>(null);
+
+  const [formType, setFormType] = useState('');
+  const [formBrand, setFormBrand] = useState('');
+  const [formModel, setFormModel] = useState('');
+  const [formSerial, setFormSerial] = useState('');
+  const [formInternalId, setFormInternalId] = useState('');
+  const [formBranchId, setFormBranchId] = useState('');
+  const [formStatusId, setFormStatusId] = useState('');
+  const [formDescription, setFormDescription] = useState('');
+  const [formImageUrl, setFormImageUrl] = useState('');
+  const [formPatrimonyId, setFormPatrimonyId] = useState('');
+  const [formAcquisitionDate, setFormAcquisitionDate] = useState('');
+  const [saving, setSaving] = useState(false);
 
   const filteredEquipment = useMemo(
     () =>
@@ -544,12 +581,162 @@ const EquipmentList = () => {
     );
   };
 
+  const openNewForm = () => {
+    setEditing(null);
+    setFormType('');
+    setFormBrand('');
+    setFormModel('');
+    setFormSerial('');
+    setFormInternalId('');
+    setFormBranchId('');
+    setFormStatusId('');
+    setFormDescription('');
+    setFormImageUrl('');
+    setFormPatrimonyId('');
+    setFormAcquisitionDate('');
+    setIsFormOpen(true);
+  };
+
+  const openEditForm = (eq: Equipment) => {
+    setEditing(eq);
+    setFormType(eq.type);
+    setFormBrand(eq.brand);
+    setFormModel(eq.model);
+    setFormSerial(eq.serialNumber);
+    setFormInternalId(eq.internalId ?? '');
+    setFormBranchId(eq.branchId ?? '');
+    setFormStatusId(eq.statusId ?? '');
+    setFormDescription(eq.description ?? '');
+    setFormImageUrl(eq.imageUrl ?? '');
+    setFormPatrimonyId(eq.patrimonyId ?? '');
+    setFormAcquisitionDate(eq.acquisitionDate ?? '');
+    setIsFormOpen(true);
+  };
+
+  const handleDelete = async () => {
+    if (!editing || !currentCompanyId) return;
+    if (!confirm('Deseja realmente excluir este equipamento?')) return;
+
+    try {
+      setSaving(true);
+      await tenantApi.deleteEquipment(currentCompanyId, editing.id);
+      setEquipment((prev) => prev.filter((e) => e.id !== editing.id));
+      setIsFormOpen(false);
+      setEditing(null);
+    } catch (error) {
+      console.error(error);
+      alert('Erro ao excluir equipamento.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDuplicateFromList = async (
+    e: React.MouseEvent,
+    eq: Equipment
+  ) => {
+    e.stopPropagation();
+    if (!currentCompanyId) {
+	  alert('Empresa não selecionada.');
+	  return;
+    }
+
+    try {
+	  const duplicated = await tenantApi.duplicateEquipment(
+	    currentCompanyId,
+	    eq.id
+	  );
+	  setEquipment((prev) => [...prev, duplicated]);
+    } catch (error) {
+	  console.error(error);
+	  alert('Erro ao duplicar equipamento.');
+    }
+  };
+
+  const handleDeleteFromList = async (
+    e: React.MouseEvent,
+    eq: Equipment
+  ) => {
+    e.stopPropagation();
+    if (!currentCompanyId) return;
+    if (!confirm('Deseja realmente excluir este equipamento?')) return;
+
+    try {
+	  await tenantApi.deleteEquipment(currentCompanyId, eq.id);
+	  setEquipment((prev) => prev.filter((item) => item.id !== eq.id));
+    } catch (error) {
+	  console.error(error);
+	  alert('Erro ao excluir equipamento.');
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentCompanyId) {
+      alert('Empresa não selecionada.');
+      return;
+    }
+    if (!formType.trim() || !formModel.trim()) {
+      alert('Tipo e modelo são obrigatórios.');
+      return;
+    }
+
+    const payload: Partial<Equipment> = {
+      type: formType,
+      brand: formBrand,
+      model: formModel,
+      serialNumber: formSerial,
+      internalId: formInternalId,
+      branchId: formBranchId || undefined,
+      statusId: formStatusId || undefined,
+      description: formDescription,
+      imageUrl: formImageUrl || undefined,
+      patrimonyId: formPatrimonyId || undefined,
+      acquisitionDate: formAcquisitionDate || undefined,
+    };
+
+    try {
+      setSaving(true);
+      if (editing) {
+        const updated = await tenantApi.updateEquipment(
+          currentCompanyId,
+          editing.id,
+          payload
+        );
+        setEquipment((prev) =>
+          prev.map((e) => (e.id === updated.id ? updated : e))
+        );
+      } else {
+        const created = await tenantApi.createEquipment(
+          currentCompanyId,
+          payload
+        );
+        setEquipment((prev) => [...prev, created]);
+      }
+
+      setIsFormOpen(false);
+      setEditing(null);
+    } catch (error) {
+      console.error(error);
+      alert('Erro ao salvar equipamento.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
-    <div className="p-6 space-y-4">
+    <div className="p-6 space-y-4 relative">
       <div className="flex items-center justify-between gap-4">
         <h2 className="text-lg font-semibold text-gray-900">
           Equipamentos cadastrados
         </h2>
+        <button
+          onClick={openNewForm}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-indigo-600 hover:bg-indigo-700 text-xs font-medium text-white"
+        >
+          <Plus size={14} />
+          Novo Equipamento
+        </button>
       </div>
 
       <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4 space-y-4">
@@ -598,13 +785,18 @@ const EquipmentList = () => {
                 <th className="py-2 px-2">Modelo</th>
                 <th className="py-2 px-2">Filial</th>
                 <th className="py-2 px-2">Estado</th>
+				<th className="py-2 px-2 text-right">Ações</th>
               </tr>
             </thead>
             <tbody>
               {filteredEquipment.map((eq) => {
                 const br = branches.find((b) => b.id === eq.branchId);
                 return (
-                  <tr key={eq.id} className="border-b last:border-0">
+                  <tr
+                    key={eq.id}
+                    className="border-b last:border-0 hover:bg-gray-50 cursor-pointer"
+                    onClick={() => openEditForm(eq)}
+                  >
                     <td className="py-2 px-2">{eq.internalId || '-'}</td>
                     <td className="py-2 px-2">{eq.type}</td>
                     <td className="py-2 px-2">{eq.model}</td>
@@ -612,13 +804,31 @@ const EquipmentList = () => {
                     <td className="py-2 px-2">
                       {renderStatusBadge(eq.statusId)}
                     </td>
+				    <td className="py-2 px-2 text-right">
+					  <button
+					    type="button"
+					    onClick={(e) => handleDuplicateFromList(e, eq)}
+					    className="inline-flex items-center justify-center w-7 h-7 rounded-full border border-gray-200 text-gray-500 hover:bg-gray-100 hover:text-gray-700 mr-1"
+					    title="Duplicar equipamento"
+					  >
+					    <Copy size={14} />
+					  </button>
+					  <button
+					    type="button"
+					    onClick={(e) => handleDeleteFromList(e, eq)}
+					    className="inline-flex items-center justify-center w-7 h-7 rounded-full border border-red-100 text-red-500 hover:bg-red-50 hover:text-red-700"
+					    title="Excluir equipamento"
+					  >
+					    <Trash2 size={14} />
+					  </button>
+				    </td>
                   </tr>
                 );
               })}
               {filteredEquipment.length === 0 && (
                 <tr>
                   <td
-                    colSpan={5}
+                    colSpan={6}
                     className="py-4 text-center text-xs text-gray-500"
                   >
                     Nenhum equipamento encontrado.
@@ -629,6 +839,203 @@ const EquipmentList = () => {
           </table>
         </div>
       </div>
+
+      {/* Painel de criação/edição */}
+      {isFormOpen && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-lg p-4 space-y-3">
+            <div className="flex justify-between items-center">
+              <h3 className="text-sm font-semibold text-gray-900">
+                {editing ? 'Editar Equipamento' : 'Novo Equipamento'}
+              </h3>
+              <button
+                onClick={() => {
+                  setIsFormOpen(false);
+                  setEditing(null);
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmit} className="space-y-3 text-xs">
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-gray-500 mb-1">
+                    ID
+                  </label>
+                  <input
+                    className="w-full border border-gray-200 rounded-md px-2 py-1.5 bg-gray-50 text-gray-500"
+                    value={
+                      editing?.id ||
+                      'Gerado automaticamente ao salvar'
+                    }
+                    readOnly
+                  />
+                </div>
+                <div>
+                  <label className="block text-gray-500 mb-1">
+                    Avatar / URL da imagem
+                  </label>
+                  <input
+                    className="w-full border border-gray-200 rounded-md px-2 py-1.5"
+                    value={formImageUrl}
+                    onChange={(e) => setFormImageUrl(e.target.value)}
+                    placeholder="https://... (opcional)"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-gray-500 mb-1">Tipo *</label>
+                  <input
+                    className="w-full border border-gray-200 rounded-md px-2 py-1.5"
+                    value={formType}
+                    onChange={(e) => setFormType(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="block text-gray-500 mb-1">Marca</label>
+                  <input
+                    className="w-full border border-gray-200 rounded-md px-2 py-1.5"
+                    value={formBrand}
+                    onChange={(e) => setFormBrand(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="block text-gray-500 mb-1">Modelo *</label>
+                  <input
+                    className="w-full border border-gray-200 rounded-md px-2 py-1.5"
+                    value={formModel}
+                    onChange={(e) => setFormModel(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="block text-gray-500 mb-1">
+                    Série / Serial
+                  </label>
+                  <input
+                    className="w-full border border-gray-200 rounded-md px-2 py-1.5"
+                    value={formSerial}
+                    onChange={(e) => setFormSerial(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="block text-gray-500 mb-1">
+                    ID Interno
+                  </label>
+                  <input
+                    className="w-full border border-gray-200 rounded-md px-2 py-1.5"
+                    value={formInternalId}
+                    onChange={(e) => setFormInternalId(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="block text-gray-500 mb-1">Filial</label>
+                  <select
+                    className="w-full border border-gray-200 rounded-md px-2 py-1.5"
+                    value={formBranchId}
+                    onChange={(e) => setFormBranchId(e.target.value)}
+                  >
+                    <option value="">Selecione...</option>
+                    {branches.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-gray-500 mb-1">Estado</label>
+                  <select
+                    className="w-full border border-gray-200 rounded-md px-2 py-1.5"
+                    value={formStatusId}
+                    onChange={(e) => setFormStatusId(e.target.value)}
+                  >
+                    <option value="">Selecione...</option>
+                    {statuses.map((st) => (
+                      <option key={st.id} value={st.id}>
+                        {st.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="block text-gray-500 mb-1">Descrição</label>
+                <textarea
+                  className="w-full border border-gray-200 rounded-md px-2 py-1.5"
+                  rows={3}
+                  value={formDescription}
+                  onChange={(e) => setFormDescription(e.target.value)}
+                />
+              </div>
+                <div>
+                  <label className="block text-gray-500 mb-1">
+                    Patrimônio
+                  </label>
+                  <input
+                    className="w-full border border-gray-200 rounded-md px-2 py-1.5"
+                    value={formPatrimonyId}
+                    onChange={(e) => setFormPatrimonyId(e.target.value)}
+                    placeholder="PAT-0001"
+                  />
+                </div>
+                <div>
+                  <label className="block text-gray-500 mb-1">
+                    Data de aquisição
+                  </label>
+                  <input
+                    type="date"
+                    className="w-full border border-gray-200 rounded-md px-2 py-1.5"
+                    value={formAcquisitionDate}
+                    onChange={(e) =>
+                      setFormAcquisitionDate(e.target.value)
+                    }
+                  />
+                </div>
+
+              <div className="flex justify-between items-center pt-2">
+                {editing && (
+                  <button
+                    type="button"
+                    onClick={handleDelete}
+                    disabled={saving}
+                    className="inline-flex items-center gap-1 text-red-600 text-xs hover:text-red-700"
+                  >
+                    <Trash2 size={14} />
+                    Excluir
+                  </button>
+                )}
+                <div className="flex gap-2 ml-auto">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsFormOpen(false);
+                      setEditing(null);
+                    }}
+                    className="px-3 py-1.5 rounded-md border border-gray-200 text-xs text-gray-600"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={saving}
+                    className="px-3 py-1.5 rounded-md bg-indigo-600 text-white text-xs font-medium disabled:opacity-60"
+                  >
+                    {saving
+                      ? 'Salvando...'
+                      : editing
+                      ? 'Salvar alterações'
+                      : 'Criar equipamento'}
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -983,6 +1390,18 @@ const MasterCompanyList = () => {
     }
   };
 
+  const handleDeleteCompany = async (companyId: string) => {
+    if (!window.confirm('Deseja realmente excluir esta empresa?')) return;
+
+    try {
+      await masterApi.deleteCompany(companyId);
+      setCompanies((prev) => prev.filter((c) => c.id !== companyId));
+    } catch (error) {
+      console.error(error);
+      alert('Erro ao excluir empresa.');
+    }
+  };
+
   return (
     <div className="p-6 space-y-4">
       <h2 className="text-lg font-semibold text-gray-100">
@@ -1047,33 +1466,56 @@ const MasterCompanyList = () => {
           <table className="w-full text-sm text-slate-100">
             <thead>
               <tr className="text-xs text-slate-400 border-b border-slate-700">
+				<th className="py-2 text-left">ID</th>
                 <th className="py-2 text-left">Empresa</th>
                 <th className="py-2 text-left">CNPJ</th>
                 <th className="py-2 text-left">Plano</th>
                 <th className="py-2 text-left">Status</th>
+				<th className="py-2 text-right">Ações</th>
               </tr>
             </thead>
             <tbody>
               {companies.map((c) => (
-                <tr
-                  key={c.id}
-                  className="border-b border-slate-800 last:border-0"
-                >
-                  <td className="py-2">{c.name}</td>
-                  <td className="py-2 text-xs text-slate-300">
-                    {c.cnpj}
-                  </td>
-                  <td className="py-2 text-xs">{c.plan}</td>
-                  <td className="py-2 text-xs">
-                    {c.status}{' '}
-                    {c.isOverdue ? '(Inadimplente)' : ''}
-                  </td>
-                </tr>
+				<tr
+				  key={c.id}
+				  className="border-b border-slate-800 last:border-0"
+				>
+				  <td className="py-2 text-xs text-slate-400">{c.id}</td>
+				  <td className="py-2">
+					<div className="text-sm font-medium text-slate-100">
+					  {c.name}
+					</div>
+					<div className="text-[11px] text-slate-400">
+					  {c.contactEmail || 'sem e-mail cadastrado'}
+					</div>
+				  </td>
+				  <td className="py-2 text-xs">{c.cnpj}</td>
+				  <td className="py-2 text-xs">{c.plan}</td>
+				  <td className="py-2 text-xs">
+					{(c as any).status === 'SUSPENSA' ? (
+					  <span className="text-amber-400">Suspensa</span>
+					) : (c as any).isOverdue ? (
+					  <span className="text-red-400">Inadimplente</span>
+					) : (
+					  <span className="text-emerald-400">Ativa</span>
+					)}
+				  </td>
+				  <td className="py-2 text-right">
+					<button
+					  type="button"
+					  onClick={() => handleDeleteCompany(c.id)}
+					  className="inline-flex items-center justify-center w-7 h-7 rounded-full border border-red-500/40 text-red-400 hover:bg-red-500/10 hover:text-red-200 text-xs"
+					  title="Excluir empresa"
+					>
+					  <Trash2 size={14} />
+					</button>
+				  </td>
+				</tr>
               ))}
               {companies.length === 0 && (
                 <tr>
                   <td
-                    colSpan={4}
+                    colSpan={6}
                     className="py-4 text-center text-xs text-slate-400"
                   >
                     Nenhuma empresa cadastrada.
@@ -1302,22 +1744,8 @@ const App = () => {
               <Route index element={<TenantDashboard />} />
               <Route path="equipamentos" element={<EquipmentList />} />
               <Route path="manutencao" element={<MaintenanceKanban />} />
-              <Route
-                path="usuarios"
-                element={
-                  <div className="p-6 text-sm text-gray-600">
-                    Gestão de usuários (em desenvolvimento).
-                  </div>
-                }
-              />
-              <Route
-                path="configuracoes"
-                element={
-                  <div className="p-6 text-sm text-gray-600">
-                    Configurações da empresa (em desenvolvimento).
-                  </div>
-                }
-              />
+              <Route path="usuarios" element={<TenantUsersPage />} />
+              <Route path="configuracoes" element={<SettingsPage />} />
             </Route>
 
             <Route
@@ -1349,5 +1777,638 @@ const App = () => {
     </React.StrictMode>
   );
 };
+
+// --------------------
+// Menu Usuários do Tenant (Router)
+// --------------------
+
+const TenantUsersPage = () => {
+  const { users, setUsers, currentCompanyId } = useAppContext();
+
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [role, setRole] = useState('leitura');
+  const [avatar, setAvatar] = useState('');        // NOVO
+  const [savingNew, setSavingNew] = useState(false);
+
+  const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editEmail, setEditEmail] = useState('');
+  const [editRole, setEditRole] = useState('leitura');
+  const [editActive, setEditActive] = useState(true);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [editAvatar, setEditAvatar] = useState('');  // NOVO
+
+  const openUserDetails = (u: User) => {
+    setSelectedUser(u);
+    setEditName(u.name);
+    setEditEmail(u.email);
+    setEditRole((u as any).role || 'leitura');
+    setEditActive((u as any).active !== false);
+	setEditAvatar((u as any).avatarUrl || '');      // NOVO
+  };
+
+  const handleCreateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentCompanyId) {
+      alert('Empresa não selecionada.');
+      return;
+    }
+    if (!name.trim() || !email.trim()) {
+      alert('Nome e e-mail são obrigatórios.');
+      return;
+    }
+
+    try {
+      setSavingNew(true);
+      const created = await tenantApi.createUser(currentCompanyId, {
+        name,
+        email,
+        role,
+        active: true,
+      });
+	  const payload: Partial<User> = {
+	    name,
+	    email,
+	    role,
+	    avatarUrl: avatar || undefined,
+	  };
+      setUsers((prev) => [...prev, created]);
+      setName('');
+      setEmail('');
+      setRole('leitura');
+    } catch (error) {
+      console.error(error);
+      alert('Erro ao criar usuário.');
+    } finally {
+      setSavingNew(false);
+    }
+  };
+
+  const handleSaveUser = async () => {
+    if (!selectedUser || !currentCompanyId) return;
+
+    try {
+      setSavingEdit(true);
+      const updated = await tenantApi.updateUser(
+        currentCompanyId,
+        selectedUser.id,
+        {
+          name: editName,
+          email: editEmail,
+          role: editRole,
+          active: editActive,
+		  avatarUrl: editAvatar || undefined,  // <- NOVO
+        }
+      );
+      setUsers((prev) =>
+        prev.map((u) => (u.id === updated.id ? updated : u))
+      );
+      setSelectedUser(updated);
+    } catch (error) {
+      console.error(error);
+      alert('Erro ao salvar usuário.');
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const handleToggleActive = async () => {
+    if (!selectedUser || !currentCompanyId) return;
+    try {
+      setSavingEdit(true);
+      const updated = await tenantApi.suspendUser(
+        currentCompanyId,
+        selectedUser.id,
+        !editActive
+      );
+      setUsers((prev) =>
+        prev.map((u) => (u.id === updated.id ? updated : u))
+      );
+      setEditActive(updated.active ?? true);
+      setSelectedUser(updated);
+    } catch (error) {
+      console.error(error);
+      alert('Erro ao alterar status do usuário.');
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const handleDeleteUser = async () => {
+    if (!selectedUser || !currentCompanyId) return;
+    if (!confirm('Deseja realmente excluir este usuário?')) return;
+
+    try {
+      setSavingEdit(true);
+      await tenantApi.deleteUser(currentCompanyId, selectedUser.id);
+      setUsers((prev) => prev.filter((u) => u.id !== selectedUser.id));
+      setSelectedUser(null);
+    } catch (error) {
+      console.error(error);
+      alert('Erro ao excluir usuário.');
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+  
+  const handleDeleteFromList = async (
+    e: React.MouseEvent,
+    user: User
+  ) => {
+    e.stopPropagation();
+    if (!currentCompanyId) return;
+    if (!window.confirm('Deseja realmente excluir este usuário?')) return;
+
+    try {
+      await tenantApi.deleteUser(currentCompanyId, user.id);
+      setUsers((prev) => prev.filter((u) => u.id !== user.id));
+      if (selectedUser?.id === user.id) {
+        setSelectedUser(null);
+      }
+    } catch (error) {
+      console.error(error);
+      alert('Erro ao excluir usuário.');
+    }
+  };
+
+  return (
+    <div className="p-6 space-y-4 relative">
+      <h2 className="text-lg font-semibold text-gray-900">
+        Usuários da Empresa
+      </h2>
+
+      {/* Form de novo usuário */}
+      <form
+        onSubmit={handleCreateUser}
+        className="bg-white rounded-lg shadow-sm border border-gray-100 p-4 flex flex-col md:flex-row gap-3 md:items-end text-xs"
+      >
+        <div className="flex-1">
+          <label className="block text-gray-500 mb-1">Nome *</label>
+          <input
+            className="w-full border border-gray-200 rounded-md px-2 py-1.5"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Nome completo"
+          />
+        </div>
+        <div className="flex-1">
+          <label className="block text-gray-500 mb-1">E-mail *</label>
+          <input
+            type="email"
+            className="w-full border border-gray-200 rounded-md px-2 py-1.5"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="email@empresa.com"
+          />
+        </div>
+        <div>
+          <label className="block text-gray-500 mb-1">Papel</label>
+          <select
+            className="border border-gray-200 rounded-md px-2 py-1.5"
+            value={role}
+            onChange={(e) => setRole(e.target.value)}
+          >
+            <option value="leitura">Leitura</option>
+            <option value="tecnico">Técnico</option>
+            <option value="gestor_ti">Gestor TI</option>
+            <option value="admin_empresa">Admin Empresa</option>
+          </select>
+        </div>
+        <div className="flex-1">
+          <label className="block text-gray-500 mb-1">
+            Avatar (URL)
+          </label>
+          <input
+            className="w-full border border-gray-200 rounded-md px-2 py-1.5"
+            value={avatar}
+            onChange={(e) => setAvatar(e.target.value)}
+            placeholder="https://... (opcional)"
+          />
+        </div>
+        <button
+          type="submit"
+          disabled={savingNew}
+          className="inline-flex items-center justify-center px-3 py-1.5 rounded-md bg-indigo-600 hover:bg-indigo-700 text-xs font-medium text-white disabled:opacity-60"
+        >
+          {savingNew ? 'Salvando...' : 'Adicionar usuário'}
+        </button>
+      </form>
+
+      {/* Lista de usuários */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs text-gray-500 border-b">
+                <th className="py-2 px-2">Nome</th>
+                <th className="py-2 px-2">E-mail</th>
+                <th className="py-2 px-2">Papel</th>
+                <th className="py-2 px-2">Status</th>
+				<th className="py-2 px-2 text-right">Ações</th> {/* NOVO */}
+              </tr>
+            </thead>
+            <tbody>
+              {users.map((u) => (
+				<tr
+				  key={u.id}
+				  className="border-b last:border-0 hover:bg-gray-50 cursor-pointer"
+				  onClick={() => openUserDetails(u)}
+				>
+				  <td className="py-2 px-2">{u.name}</td>
+				  <td className="py-2 px-2 text-xs text-gray-600">{u.email}</td>
+				  <td className="py-2 px-2 text-xs">
+					{(u as any).role || '-'}
+				  </td>
+				  <td className="py-2 px-2 text-xs">
+					{(u as any).active === false ? (
+					  <span className="text-red-600">Inativo</span>
+					) : (
+					  <span className="text-green-600">Ativo</span>
+					)}
+				  </td>
+				  <td className="py-2 px-2 text-right">
+					<button
+					  type="button"
+					  onClick={(e) => handleDeleteFromList(e, u)}
+					  className="inline-flex items-center justify-center w-7 h-7 rounded-full border border-red-100 text-red-500 hover:bg-red-50 hover:text-red-700"
+					  title="Excluir usuário"
+					>
+					  <Trash2 size={14} />
+					</button>
+				  </td>
+				</tr>
+
+              ))}
+              {users.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={5}
+                    className="py-4 text-center text-xs text-gray-500"
+                  >
+                    Nenhum usuário cadastrado.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Painel de detalhes/edição */}
+      {selectedUser && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-lg p-4 space-y-3">
+            <div className="flex justify-between items-center">
+              <h3 className="text-sm font-semibold text-gray-900">
+                Detalhes do Usuário
+              </h3>
+              <button
+                onClick={() => setSelectedUser(null)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div className="space-y-3 text-xs">
+              <div className="flex items-center gap-3">
+                {selectedUser.avatarUrl && (
+                  <img
+                    src={selectedUser.avatarUrl}
+                    alt={selectedUser.name}
+                    className="w-10 h-10 rounded-full object-cover border border-gray-200"
+                  />
+                )}
+                <div>
+                  <div className="text-[11px] text-gray-500">
+                    ID: {selectedUser.id}
+                  </div>
+                  <div className="text-xs text-gray-700 font-medium">
+                    {selectedUser.name}
+                  </div>
+                  <div className="text-[11px] text-gray-500">
+                    {selectedUser.email}
+                  </div>
+                </div>
+              </div>
+			</div>
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="block text-gray-500 mb-1">Nome</label>
+                <input
+                  className="w-full border border-gray-200 rounded-md px-2 py-1.5"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="block text-gray-500 mb-1">E-mail</label>
+                <input
+                  className="w-full border border-gray-200 rounded-md px-2 py-1.5"
+                  value={editEmail}
+                  onChange={(e) => setEditEmail(e.target.value)}
+                />
+              </div>
+              <div className="flex gap-3 items-center">
+                <div>
+                  <label className="block text-gray-500 mb-1">Papel</label>
+                  <select
+                    className="border border-gray-200 rounded-md px-2 py-1.5"
+                    value={editRole}
+                    onChange={(e) => setEditRole(e.target.value)}
+                  >
+                    <option value="leitura">Leitura</option>
+                    <option value="tecnico">Técnico</option>
+                    <option value="gestor_ti">Gestor TI</option>
+                    <option value="admin_empresa">Admin Empresa</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-gray-500 mb-1">
+                    Avatar (URL)
+                  </label>
+                  <input
+                    className="w-full border border-gray-200 rounded-md px-2 py-1.5"
+                    value={editAvatar}
+                    onChange={(e) => setEditAvatar(e.target.value)}
+                  />
+                </div>
+                <div className="flex items-center gap-2 mt-4">
+                  <input
+                    id="user-active"
+                    type="checkbox"
+                    checked={editActive}
+                    onChange={(e) => setEditActive(e.target.checked)}
+                  />
+                  <label
+                    htmlFor="user-active"
+                    className="text-xs text-gray-600"
+                  >
+                    Ativo
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-between items-center pt-2">
+              <button
+                type="button"
+                disabled={savingEdit}
+                onClick={handleDeleteUser}
+                className="inline-flex items-center gap-1 text-red-600 text-xs hover:text-red-700"
+              >
+                <Trash2 size={14} />
+                Excluir usuário
+              </button>
+
+              <div className="flex gap-2 ml-auto">
+                <button
+                  type="button"
+                  onClick={handleToggleActive}
+                  disabled={savingEdit}
+                  className="px-3 py-1.5 rounded-md border border-gray-200 text-xs"
+                >
+                  {editActive ? 'Suspender' : 'Reativar'}
+                </button>
+                <button
+                  type="button"
+                  disabled={savingEdit}
+                  onClick={handleSaveUser}
+                  className="px-3 py-1.5 rounded-md bg-indigo-600 text-white text-xs font-medium disabled:opacity-60"
+                >
+                  {savingEdit ? 'Salvando...' : 'Salvar alterações'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// --------------------
+// Layout organizado com seções de Tipos e Modelos de equipamentos, sem API real (Router)
+// --------------------
+
+const SettingsPage = () => {
+  const [types, setTypes] = useState<string[]>([
+    'Notebook',
+    'Desktop',
+    'Monitor',
+  ]);
+  const [models, setModels] = useState<string[]>(['Dell Inspiron 15']);
+  const [customStatuses, setCustomStatuses] = useState<string[]>([
+    'Aguardando peça',
+  ]);
+
+  const [newType, setNewType] = useState('');
+  const [newModel, setNewModel] = useState('');
+  const [newStatus, setNewStatus] = useState('');
+
+  const addType = () => {
+    if (!newType.trim()) return;
+    setTypes((prev) => [...prev, newType.trim()]);
+    setNewType('');
+  };
+
+  const addModel = () => {
+    if (!newModel.trim()) return;
+    setModels((prev) => [...prev, newModel.trim()]);
+    setNewModel('');
+  };
+
+  const addStatus = () => {
+    if (!newStatus.trim()) return;
+    setCustomStatuses((prev) => [...prev, newStatus.trim()]);
+    setNewStatus('');
+  };
+
+  const removeItem = (
+    list: string[],
+    setter: React.Dispatch<React.SetStateAction<string[]>>,
+    value: string
+  ) => {
+    setter(list.filter((item) => item !== value));
+  };
+
+  return (
+    <div className="p-6 space-y-4">
+      <h2 className="text-lg font-semibold text-gray-900">
+        Configurações da Empresa
+      </h2>
+
+      <div className="grid md:grid-cols-3 gap-4">
+        {/* Tipos de equipamento */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4 space-y-3">
+          <h3 className="text-sm font-semibold text-gray-800">
+            Tipos de Equipamento
+          </h3>
+          <p className="text-xs text-gray-500">
+            Defina os tipos mais comuns utilizados nesta empresa (ex.:
+            Notebook, Desktop, Monitor).
+          </p>
+
+          <div className="flex gap-2 text-xs">
+            <input
+              className="flex-1 border border-gray-200 rounded-md px-2 py-1.5"
+              value={newType}
+              onChange={(e) => setNewType(e.target.value)}
+              placeholder="Novo tipo..."
+            />
+            <button
+              type="button"
+              onClick={addType}
+              className="px-3 py-1.5 rounded-md bg-indigo-600 text-white text-xs hover:bg-indigo-700"
+            >
+              Adicionar
+            </button>
+          </div>
+
+          <ul className="mt-2 space-y-1 text-xs">
+            {types.map((t) => (
+              <li
+                key={t}
+                className="flex justify-between items-center border border-gray-100 rounded-md px-2 py-1"
+              >
+                <span>{t}</span>
+                <button
+                  type="button"
+                  onClick={() => removeItem(types, setTypes, t)}
+                  className="text-gray-400 hover:text-red-500"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </li>
+            ))}
+            {types.length === 0 && (
+              <li className="text-[11px] text-gray-400">
+                Nenhum tipo cadastrado.
+              </li>
+            )}
+          </ul>
+
+          <p className="text-[11px] text-gray-400 pt-2">
+            Em breve: sincronização com tipos globais definidos pelo
+            Painel Master e envio de sugestões com base no uso real.
+          </p>
+        </div>
+
+        {/* Modelos */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4 space-y-3">
+          <h3 className="text-sm font-semibold text-gray-800">
+            Modelos
+          </h3>
+          <p className="text-xs text-gray-500">
+            Mantenha um catálogo de modelos frequentes para agilizar o
+            cadastro.
+          </p>
+
+          <div className="flex gap-2 text-xs">
+            <input
+              className="flex-1 border border-gray-200 rounded-md px-2 py-1.5"
+              value={newModel}
+              onChange={(e) => setNewModel(e.target.value)}
+              placeholder="Novo modelo..."
+            />
+            <button
+              type="button"
+              onClick={addModel}
+              className="px-3 py-1.5 rounded-md bg-indigo-600 text-white text-xs hover:bg-indigo-700"
+            >
+              Adicionar
+            </button>
+          </div>
+
+          <ul className="mt-2 space-y-1 text-xs">
+            {models.map((m) => (
+              <li
+                key={m}
+                className="flex justify-between items-center border border-gray-100 rounded-md px-2 py-1"
+              >
+                <span>{m}</span>
+                <button
+                  type="button"
+                  onClick={() => removeItem(models, setModels, m)}
+                  className="text-gray-400 hover:text-red-500"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </li>
+            ))}
+            {models.length === 0 && (
+              <li className="text-[11px] text-gray-400">
+                Nenhum modelo cadastrado.
+              </li>
+            )}
+          </ul>
+
+          <p className="text-[11px] text-gray-400 pt-2">
+            Em breve: auto-sugestão a partir dos equipamentos criados e
+            envio automático de novos modelos para a base Master.
+          </p>
+        </div>
+
+        {/* Estados customizados */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4 space-y-3">
+          <h3 className="text-sm font-semibold text-gray-800">
+            Estados customizados
+          </h3>
+          <p className="text-xs text-gray-500">
+            Além dos estados padrão (Funcionando, Em manutenção, etc.),
+            defina estados específicos para esta empresa.
+          </p>
+
+          <div className="flex gap-2 text-xs">
+            <input
+              className="flex-1 border border-gray-200 rounded-md px-2 py-1.5"
+              value={newStatus}
+              onChange={(e) => setNewStatus(e.target.value)}
+              placeholder="Novo estado..."
+            />
+            <button
+              type="button"
+              onClick={addStatus}
+              className="px-3 py-1.5 rounded-md bg-indigo-600 text-white text-xs hover:bg-indigo-700"
+            >
+              Adicionar
+            </button>
+          </div>
+
+          <ul className="mt-2 space-y-1 text-xs">
+            {customStatuses.map((s) => (
+              <li
+                key={s}
+                className="flex justify-between items-center border border-gray-100 rounded-md px-2 py-1"
+              >
+                <span>{s}</span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    removeItem(customStatuses, setCustomStatuses, s)
+                  }
+                  className="text-gray-400 hover:text-red-500"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </li>
+            ))}
+            {customStatuses.length === 0 && (
+              <li className="text-[11px] text-gray-400">
+                Nenhum estado customizado.
+              </li>
+            )}
+          </ul>
+
+          <p className="text-[11px] text-gray-400 pt-2">
+            Em breve: integração com o cadastro de estados globais e
+            propagação desses estados para o histórico de equipamentos.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 
 export default App;

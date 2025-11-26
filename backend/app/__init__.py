@@ -1,9 +1,17 @@
+import os
+
 from flask import Flask, jsonify
 from .config import Config
 from .extensions import db, migrate, cors, jwt
 
 def create_app(config_class=Config) -> Flask:
     app = Flask(__name__)
+
+    # Pasta de upload de avatares (dentro da pasta static)
+    avatars_path = os.path.join(app.static_folder, "avatars")
+    os.makedirs(avatars_path, exist_ok=True)
+    app.config["AVATAR_UPLOAD_FOLDER"] = avatars_path
+
     app.config.from_object(config_class)
 
     db.init_app(app)

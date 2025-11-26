@@ -48,6 +48,23 @@ export const masterApi = {
     return response.data.data;
   },
 
+  deleteCompany: async (companyId: string): Promise<void> => { 
+    await apiClient.delete<ApiResponse<{ deleted: boolean }>>(
+	  `/master/v1/empresas/${companyId}`
+    );
+  },
+
+  updateCompany: async (
+    companyId: string,
+    payload: Partial<Company>
+  ): Promise<Company> => {
+    const response = await apiClient.patch<ApiResponse<Company>>(
+	  `/master/v1/empresas/${companyId}`,
+	  payload
+    );
+    return response.data.data;
+  },
+
   // Histórico financeiro / transações
   getTransactions: async (): Promise<Transaction[]> => {
     const response = await apiClient.get<ApiResponse<Transaction[]>>(
