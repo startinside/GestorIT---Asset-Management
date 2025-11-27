@@ -65,7 +65,7 @@ interface AppContextType {
   transactions: Transaction[];
   statuses: EquipmentStatus[];
   branches: Branch[];
-  users: User[]; // NOVO: usuários do tenant
+  users: User[];
 
   isLoading: boolean;
   error: string | null;
@@ -77,7 +77,8 @@ interface AppContextType {
   setEquipment: React.Dispatch<React.SetStateAction<Equipment[]>>;
   setTickets: React.Dispatch<React.SetStateAction<MaintenanceTicket[]>>;
   setCompanies: React.Dispatch<React.SetStateAction<Company[]>>;
-  setUsers: React.Dispatch<React.SetStateAction<User[]>>; // NOVO
+  setUsers: React.Dispatch<React.SetStateAction<User[]>>;
+  setCurrentUser: React.Dispatch<React.SetStateAction<User | null>>;
 }
 
 const AppContext = createContext<AppContextType | null>(null);
@@ -88,9 +89,7 @@ export const useAppContext = () => {
     throw new Error('useAppContext deve ser usado dentro de AppProvider');
   }
   return ctx;
-};
-
-// --------------------
+};// --------------------
 // Provider
 // --------------------
 
@@ -105,12 +104,12 @@ const AppProvider = ({ children }: { children: ReactNode }) => {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [statuses, setStatuses] = useState<EquipmentStatus[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
-  const [users, setUsers] = useState<User[]>([]); // NOVO
+  const [users, setUsers] = useState<User[]>([]);
 
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Restaura sessão do localStorage (token + modo + usuário mínimo)
+  // Restaura sessão do localStorage
   useEffect(() => {
     const storedToken = localStorage.getItem('gestorit_token');
     const storedMode = localStorage.getItem('gestorit_mode') as AuthMode | null;
@@ -124,7 +123,6 @@ const AppProvider = ({ children }: { children: ReactNode }) => {
         setCurrentUser(parsedUser);
         if (storedCompanyId) setCurrentCompanyId(storedCompanyId);
       } catch {
-        // Se der erro, limpa a sessão
         localStorage.removeItem('gestorit_token');
         localStorage.removeItem('gestorit_mode');
         localStorage.removeItem('gestorit_user');
@@ -133,7 +131,7 @@ const AppProvider = ({ children }: { children: ReactNode }) => {
     }
   }, []);
 
-  // Carrega dados iniciais conforme o modo/empresa
+  // Carrega dados iniciais
   useEffect(() => {
     const fetchInitialData = async () => {
       if (!mode || !currentUser) return;
@@ -147,36 +145,30 @@ const AppProvider = ({ children }: { children: ReactNode }) => {
           ]);
           setCompanies(companiesRes);
           setTransactions(transactionsRes);
-		} else if (mode === 'tenant') {
-		  const companyId =
-			currentCompanyId ||
-			currentUser.companies?.[0] ||
-			'c1'; // fallback simples
+        } else if (mode === 'tenant') {
+          const companyId =
+            currentCompanyId ||
+            currentUser.companies?.[0] ||
+            'c1';
 
-		  setCurrentCompanyId(companyId);
-		  localStorage.setItem('gestorit_company_id', companyId);
+          setCurrentCompanyId(companyId);
+          localStorage.setItem('gestorit_company_id', companyId);
 
-		  const [
-			equipRes,
-			ticketsRes,
-			statusesRes,
-			branchesRes,
-			usersRes,
-		  ] = await Promise.all([
-			tenantApi.getEquipments(companyId),
-			tenantApi.getMaintenanceTickets(companyId),
-			tenantApi.getEquipmentStatuses(companyId),
-			tenantApi.getBranches(companyId),
-			tenantApi.getUsers(companyId),
-		  ]);
+          const [equipRes, ticketsRes, statusesRes, branchesRes, usersRes] =
+            await Promise.all([
+              tenantApi.getEquipments(companyId),
+              tenantApi.getMaintenanceTickets(companyId),
+              tenantApi.getEquipmentStatuses(companyId),
+              tenantApi.getBranches(companyId),
+              tenantApi.getUsers(companyId),
+            ]);
 
-		  setEquipment(equipRes);
-		  setTickets(ticketsRes);
-		  setStatuses(statusesRes);
-		  setBranches(branchesRes);
-		  setUsers(usersRes);
-		}
-
+          setEquipment(equipRes);
+          setTickets(ticketsRes);
+          setStatuses(statusesRes);
+          setBranches(branchesRes);
+          setUsers(usersRes);
+        }
       } catch (err: any) {
         console.error(err);
         setError('Erro ao carregar dados iniciais.');
@@ -235,50 +227,50 @@ const AppProvider = ({ children }: { children: ReactNode }) => {
     setTransactions([]);
     setStatuses([]);
     setBranches([]);
-	setUsers([]); // <--- limpar também
+    setUsers([]);
   };
 
   const value: AppContextType = useMemo(
     () => ({
-	  mode,
-	  currentUser,
-	  currentCompanyId,
-	  equipment,
-	  tickets,
-	  companies,
-	  transactions,
-	  statuses,
-	  branches,
-	  users, // NOVO
-	  isLoading,
-	  error,
-	  login,
-	  logout,
-	  setCurrentCompanyId,
-	  setEquipment,
-	  setTickets,
-	  setCompanies,
-	  setUsers, // NOVO
+      mode,
+      currentUser,
+      currentCompanyId,
+      equipment,
+      tickets,
+      companies,
+      transactions,
+      statuses,
+      branches,
+      users,
+      isLoading,
+      error,
+      login,
+      logout,
+      setCurrentCompanyId,
+      setEquipment,
+      setTickets,
+      setCompanies,
+      setUsers,
+      setCurrentUser,
     }),
     [
-	  mode,
-	  currentUser,
-	  currentCompanyId,
-	  equipment,
-	  tickets,
-	  companies,
-	  transactions,
-	  statuses,
-	  branches,
-	  users,            // NOVO
-	  isLoading,
-	  error,
+      mode,
+      currentUser,
+      currentCompanyId,
+      equipment,
+      tickets,
+      companies,
+      transactions,
+      statuses,
+      branches,
+      users,
+      isLoading,
+      error,
     ]
   );
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 };
-
 // --------------------
 // Componentes de Layout / UI
 // --------------------
@@ -294,6 +286,8 @@ const TopBar = () => {
     return 'GestorIT';
   }, [location.pathname]);
 
+  const avatarSrc = (currentUser as any)?.avatarUrl || '/static/avatars/default.png';
+
   return (
     <header className="flex items-center justify-between px-6 py-3 bg-white border-b border-gray-200">
       <div>
@@ -302,10 +296,12 @@ const TopBar = () => {
           Controle centralizado de equipamentos, manutenções e empresas.
         </p>
       </div>
+
       <div className="flex items-center gap-4">
         <button className="relative rounded-full p-2 hover:bg-gray-100">
           <Bell className="w-5 h-5 text-gray-500" />
         </button>
+
         {currentUser && (
           <div className="flex items-center gap-3">
             <div className="text-right">
@@ -314,6 +310,15 @@ const TopBar = () => {
               </div>
               <div className="text-xs text-gray-500">{currentUser.email}</div>
             </div>
+
+            <div className="w-8 h-8 rounded-full overflow-hidden border border-gray-200 bg-gray-100 flex items-center justify-center">
+              <img
+                src={avatarSrc}
+                alt={currentUser.name}
+                className="w-full h-full object-cover"
+              />
+            </div>
+
             <button
               onClick={() => {
                 logout();
@@ -414,7 +419,6 @@ const MasterSidebar = () => {
     </aside>
   );
 };
-
 // --------------------
 // Páginas Tenant
 // --------------------
@@ -519,20 +523,15 @@ const TenantDashboard = () => {
 };
 
 const EquipmentList = () => {
-  const {
-    equipment,
-    statuses,
-    branches,
-    currentCompanyId,
-    setEquipment,
-  } = useAppContext();
+  const { equipment, statuses, branches, currentCompanyId, setEquipment } =
+    useAppContext();
 
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('');
-
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editing, setEditing] = useState<Equipment | null>(null);
 
+  // Form states
   const [formType, setFormType] = useState('');
   const [formBrand, setFormBrand] = useState('');
   const [formModel, setFormModel] = useState('');
@@ -558,9 +557,7 @@ const EquipmentList = () => {
           eq.serialNumber.toLowerCase().includes(term) ||
           (eq.internalId ?? '').toLowerCase().includes(term);
 
-        const matchesStatus = filterStatus
-          ? eq.statusId === filterStatus
-          : true;
+        const matchesStatus = filterStatus ? eq.statusId === filterStatus : true;
 
         return matchesSearch && matchesStatus;
       }),
@@ -570,7 +567,6 @@ const EquipmentList = () => {
   const renderStatusBadge = (statusId: string) => {
     const st = statuses.find((s) => s.id === statusId);
     if (!st) return <span className="text-xs text-gray-400">-</span>;
-
     return (
       <span
         className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium"
@@ -616,7 +612,6 @@ const EquipmentList = () => {
   const handleDelete = async () => {
     if (!editing || !currentCompanyId) return;
     if (!confirm('Deseja realmente excluir este equipamento?')) return;
-
     try {
       setSaving(true);
       await tenantApi.deleteEquipment(currentCompanyId, editing.id);
@@ -631,42 +626,34 @@ const EquipmentList = () => {
     }
   };
 
-  const handleDuplicateFromList = async (
-    e: React.MouseEvent,
-    eq: Equipment
-  ) => {
+  const handleDuplicateFromList = async (e: React.MouseEvent, eq: Equipment) => {
     e.stopPropagation();
     if (!currentCompanyId) {
-	  alert('Empresa não selecionada.');
-	  return;
+      alert('Empresa não selecionada.');
+      return;
     }
-
     try {
-	  const duplicated = await tenantApi.duplicateEquipment(
-	    currentCompanyId,
-	    eq.id
-	  );
-	  setEquipment((prev) => [...prev, duplicated]);
+      const duplicated = await tenantApi.duplicateEquipment(
+        currentCompanyId,
+        eq.id
+      );
+      setEquipment((prev) => [...prev, duplicated]);
     } catch (error) {
-	  console.error(error);
-	  alert('Erro ao duplicar equipamento.');
+      console.error(error);
+      alert('Erro ao duplicar equipamento.');
     }
   };
 
-  const handleDeleteFromList = async (
-    e: React.MouseEvent,
-    eq: Equipment
-  ) => {
+  const handleDeleteFromList = async (e: React.MouseEvent, eq: Equipment) => {
     e.stopPropagation();
     if (!currentCompanyId) return;
     if (!confirm('Deseja realmente excluir este equipamento?')) return;
-
     try {
-	  await tenantApi.deleteEquipment(currentCompanyId, eq.id);
-	  setEquipment((prev) => prev.filter((item) => item.id !== eq.id));
+      await tenantApi.deleteEquipment(currentCompanyId, eq.id);
+      setEquipment((prev) => prev.filter((item) => item.id !== eq.id));
     } catch (error) {
-	  console.error(error);
-	  alert('Erro ao excluir equipamento.');
+      console.error(error);
+      alert('Erro ao excluir equipamento.');
     }
   };
 
@@ -713,7 +700,6 @@ const EquipmentList = () => {
         );
         setEquipment((prev) => [...prev, created]);
       }
-
       setIsFormOpen(false);
       setEditing(null);
     } catch (error) {
@@ -723,7 +709,6 @@ const EquipmentList = () => {
       setSaving(false);
     }
   };
-
   return (
     <div className="p-6 space-y-4 relative">
       <div className="flex items-center justify-between gap-4">
@@ -785,7 +770,7 @@ const EquipmentList = () => {
                 <th className="py-2 px-2">Modelo</th>
                 <th className="py-2 px-2">Filial</th>
                 <th className="py-2 px-2">Estado</th>
-				<th className="py-2 px-2 text-right">Ações</th>
+                <th className="py-2 px-2 text-right">Ações</th>
               </tr>
             </thead>
             <tbody>
@@ -801,27 +786,25 @@ const EquipmentList = () => {
                     <td className="py-2 px-2">{eq.type}</td>
                     <td className="py-2 px-2">{eq.model}</td>
                     <td className="py-2 px-2">{br?.name || '-'}</td>
-                    <td className="py-2 px-2">
-                      {renderStatusBadge(eq.statusId)}
+                    <td className="py-2 px-2">{renderStatusBadge(eq.statusId)}</td>
+                    <td className="py-2 px-2 text-right">
+                      <button
+                        type="button"
+                        onClick={(e) => handleDuplicateFromList(e, eq)}
+                        className="inline-flex items-center justify-center w-7 h-7 rounded-full border border-gray-200 text-gray-500 hover:bg-gray-100 hover:text-gray-700 mr-1"
+                        title="Duplicar equipamento"
+                      >
+                        <Copy size={14} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => handleDeleteFromList(e, eq)}
+                        className="inline-flex items-center justify-center w-7 h-7 rounded-full border border-red-100 text-red-500 hover:bg-red-50 hover:text-red-700"
+                        title="Excluir equipamento"
+                      >
+                        <Trash2 size={14} />
+                      </button>
                     </td>
-				    <td className="py-2 px-2 text-right">
-					  <button
-					    type="button"
-					    onClick={(e) => handleDuplicateFromList(e, eq)}
-					    className="inline-flex items-center justify-center w-7 h-7 rounded-full border border-gray-200 text-gray-500 hover:bg-gray-100 hover:text-gray-700 mr-1"
-					    title="Duplicar equipamento"
-					  >
-					    <Copy size={14} />
-					  </button>
-					  <button
-					    type="button"
-					    onClick={(e) => handleDeleteFromList(e, eq)}
-					    className="inline-flex items-center justify-center w-7 h-7 rounded-full border border-red-100 text-red-500 hover:bg-red-50 hover:text-red-700"
-					    title="Excluir equipamento"
-					  >
-					    <Trash2 size={14} />
-					  </button>
-				    </td>
                   </tr>
                 );
               })}
@@ -862,15 +845,10 @@ const EquipmentList = () => {
             <form onSubmit={handleSubmit} className="space-y-3 text-xs">
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="block text-gray-500 mb-1">
-                    ID
-                  </label>
+                  <label className="block text-gray-500 mb-1">ID</label>
                   <input
                     className="w-full border border-gray-200 rounded-md px-2 py-1.5 bg-gray-50 text-gray-500"
-                    value={
-                      editing?.id ||
-                      'Gerado automaticamente ao salvar'
-                    }
+                    value={editing?.id || 'Gerado automaticamente ao salvar'}
                     readOnly
                   />
                 </div>
@@ -922,9 +900,7 @@ const EquipmentList = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-gray-500 mb-1">
-                    ID Interno
-                  </label>
+                  <label className="block text-gray-500 mb-1">ID Interno</label>
                   <input
                     className="w-full border border-gray-200 rounded-md px-2 py-1.5"
                     value={formInternalId}
@@ -971,30 +947,26 @@ const EquipmentList = () => {
                   onChange={(e) => setFormDescription(e.target.value)}
                 />
               </div>
-                <div>
-                  <label className="block text-gray-500 mb-1">
-                    Patrimônio
-                  </label>
-                  <input
-                    className="w-full border border-gray-200 rounded-md px-2 py-1.5"
-                    value={formPatrimonyId}
-                    onChange={(e) => setFormPatrimonyId(e.target.value)}
-                    placeholder="PAT-0001"
-                  />
-                </div>
-                <div>
-                  <label className="block text-gray-500 mb-1">
-                    Data de aquisição
-                  </label>
-                  <input
-                    type="date"
-                    className="w-full border border-gray-200 rounded-md px-2 py-1.5"
-                    value={formAcquisitionDate}
-                    onChange={(e) =>
-                      setFormAcquisitionDate(e.target.value)
-                    }
-                  />
-                </div>
+              <div>
+                <label className="block text-gray-500 mb-1">Patrimônio</label>
+                <input
+                  className="w-full border border-gray-200 rounded-md px-2 py-1.5"
+                  value={formPatrimonyId}
+                  onChange={(e) => setFormPatrimonyId(e.target.value)}
+                  placeholder="PAT-0001"
+                />
+              </div>
+              <div>
+                <label className="block text-gray-500 mb-1">
+                  Data de aquisição
+                </label>
+                <input
+                  type="date"
+                  className="w-full border border-gray-200 rounded-md px-2 py-1.5"
+                  value={formAcquisitionDate}
+                  onChange={(e) => setFormAcquisitionDate(e.target.value)}
+                />
+              </div>
 
               <div className="flex justify-between items-center pt-2">
                 {editing && (
@@ -1039,14 +1011,8 @@ const EquipmentList = () => {
     </div>
   );
 };
-
 const MaintenanceKanban = () => {
-  const {
-    tickets,
-    setTickets,
-    equipment,
-    currentCompanyId,
-  } = useAppContext();
+  const { tickets, setTickets, equipment, currentCompanyId } = useAppContext();
 
   type KanbanStatus = MaintenanceTicket['kanbanStatus'];
 
@@ -1091,39 +1057,27 @@ const MaintenanceKanban = () => {
     e.preventDefault();
   };
 
-  const resolveNewStatus = (
-    columnId: string
-  ): KanbanStatus => {
+  const resolveNewStatus = (columnId: string): KanbanStatus => {
     if (columnId === 'Aberto') return 'Aberto';
     if (columnId === 'Concluído') return 'Concluído';
-    // grupo "Em Andamento"
     return 'Em Manutenção';
   };
 
   const handleMoveTicket = async (ticketId: string, columnId: string) => {
     const newStatus = resolveNewStatus(columnId);
 
-    // Atualização otimista no front
     setTickets((prev) =>
       prev.map((t) =>
-        t.id === ticketId
-          ? { ...t, kanbanStatus: newStatus }
-          : t
+        t.id === ticketId ? { ...t, kanbanStatus: newStatus } : t
       )
     );
 
-    // Se não tivermos companyId (algo errado), paramos aqui
     if (!currentCompanyId) return;
 
     try {
-      await tenantApi.moveTicket(
-        currentCompanyId,
-        ticketId,
-        newStatus
-      );
+      await tenantApi.moveTicket(currentCompanyId, ticketId, newStatus);
     } catch (error) {
       console.error('Erro ao atualizar chamado via API', error);
-      // opcional: rollback
     }
   };
 
@@ -1151,9 +1105,7 @@ const MaintenanceKanban = () => {
   const grouped = useMemo(() => {
     const result: Record<string, MaintenanceTicket[]> = {};
     columns.forEach((col) => {
-      result[col.id] = tickets.filter((t) =>
-        col.match.includes(t.kanbanStatus)
-      );
+      result[col.id] = tickets.filter((t) => col.match.includes(t.kanbanStatus));
     });
     return result;
   }, [tickets]);
@@ -1167,16 +1119,13 @@ const MaintenanceKanban = () => {
 
     try {
       setCreating(true);
-      const created = await tenantApi.createTicket(
-        currentCompanyId,
-        {
-          title: newTitle,
-          description: newDescription,
-          equipmentId: newEquipmentId || undefined,
-          kanbanStatus: 'Aberto',
-          priority: 'Média',
-        }
-      );
+      const created = await tenantApi.createTicket(currentCompanyId, {
+        title: newTitle,
+        description: newDescription,
+        equipmentId: newEquipmentId || undefined,
+        kanbanStatus: 'Aberto',
+        priority: 'Média',
+      });
       setTickets((prev) => [...prev, created]);
       setNewTitle('');
       setNewDescription('');
@@ -1205,11 +1154,9 @@ const MaintenanceKanban = () => {
             <Calendar size={14} />
             Linha do Tempo
           </button>
-          {/* Botão "Novo Chamado" abre um mini-form basicamente inline */}
         </div>
       </div>
 
-      {/* Form simples de novo chamado */}
       <div className="bg-white border border-gray-200 rounded-md p-3 mb-4 flex flex-col md:flex-row gap-2 md:items-end">
         <div className="flex-1">
           <label className="block text-xs text-gray-500 mb-1">
@@ -1246,7 +1193,9 @@ const MaintenanceKanban = () => {
           disabled={creating}
           className="inline-flex items-center justify-center px-3 py-2 rounded-md bg-indigo-600 hover:bg-indigo-700 text-xs font-medium text-white disabled:opacity-60"
         >
-          {creating ? 'Criando...' : (
+          {creating ? (
+            'Criando...'
+          ) : (
             <>
               <Plus size={14} className="mr-1" />
               Novo Chamado
@@ -1255,7 +1204,6 @@ const MaintenanceKanban = () => {
         </button>
       </div>
 
-      {/* Colunas do Kanban */}
       <div className="flex-1 flex gap-4 overflow-x-auto pb-4">
         {columns.map((col) => (
           <div
@@ -1404,9 +1352,7 @@ const MasterCompanyList = () => {
 
   return (
     <div className="p-6 space-y-4">
-      <h2 className="text-lg font-semibold text-gray-100">
-        Empresas Clientes
-      </h2>
+      <h2 className="text-lg font-semibold text-gray-100">Empresas Clientes</h2>
 
       {/* Formulário simples de nova empresa */}
       <form
@@ -1426,9 +1372,7 @@ const MasterCompanyList = () => {
           />
         </div>
         <div>
-          <label className="block text-xs text-slate-400 mb-1">
-            CNPJ
-          </label>
+          <label className="block text-xs text-slate-400 mb-1">CNPJ</label>
           <input
             type="text"
             className="bg-slate-800 border border-slate-600 rounded-md px-2 py-1.5 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
@@ -1438,9 +1382,7 @@ const MasterCompanyList = () => {
           />
         </div>
         <div>
-          <label className="block text-xs text-slate-400 mb-1">
-            Plano
-          </label>
+          <label className="block text-xs text-slate-400 mb-1">Plano</label>
           <select
             className="bg-slate-800 border border-slate-600 rounded-md px-2 py-1.5 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
             value={plan}
@@ -1466,51 +1408,48 @@ const MasterCompanyList = () => {
           <table className="w-full text-sm text-slate-100">
             <thead>
               <tr className="text-xs text-slate-400 border-b border-slate-700">
-				<th className="py-2 text-left">ID</th>
+                <th className="py-2 text-left">ID</th>
                 <th className="py-2 text-left">Empresa</th>
                 <th className="py-2 text-left">CNPJ</th>
                 <th className="py-2 text-left">Plano</th>
                 <th className="py-2 text-left">Status</th>
-				<th className="py-2 text-right">Ações</th>
+                <th className="py-2 text-right">Ações</th>
               </tr>
             </thead>
             <tbody>
               {companies.map((c) => (
-				<tr
-				  key={c.id}
-				  className="border-b border-slate-800 last:border-0"
-				>
-				  <td className="py-2 text-xs text-slate-400">{c.id}</td>
-				  <td className="py-2">
-					<div className="text-sm font-medium text-slate-100">
-					  {c.name}
-					</div>
-					<div className="text-[11px] text-slate-400">
-					  {c.contactEmail || 'sem e-mail cadastrado'}
-					</div>
-				  </td>
-				  <td className="py-2 text-xs">{c.cnpj}</td>
-				  <td className="py-2 text-xs">{c.plan}</td>
-				  <td className="py-2 text-xs">
-					{(c as any).status === 'SUSPENSA' ? (
-					  <span className="text-amber-400">Suspensa</span>
-					) : (c as any).isOverdue ? (
-					  <span className="text-red-400">Inadimplente</span>
-					) : (
-					  <span className="text-emerald-400">Ativa</span>
-					)}
-				  </td>
-				  <td className="py-2 text-right">
-					<button
-					  type="button"
-					  onClick={() => handleDeleteCompany(c.id)}
-					  className="inline-flex items-center justify-center w-7 h-7 rounded-full border border-red-500/40 text-red-400 hover:bg-red-500/10 hover:text-red-200 text-xs"
-					  title="Excluir empresa"
-					>
-					  <Trash2 size={14} />
-					</button>
-				  </td>
-				</tr>
+                <tr key={c.id} className="border-b border-slate-800 last:border-0">
+                  <td className="py-2 text-xs text-slate-400">{c.id}</td>
+                  <td className="py-2">
+                    <div className="text-sm font-medium text-slate-100">
+                      {c.name}
+                    </div>
+                    <div className="text-[11px] text-slate-400">
+                      {c.contactEmail || 'sem e-mail cadastrado'}
+                    </div>
+                  </td>
+                  <td className="py-2 text-xs">{c.cnpj}</td>
+                  <td className="py-2 text-xs">{c.plan}</td>
+                  <td className="py-2 text-xs">
+                    {(c as any).status === 'SUSPENSA' ? (
+                      <span className="text-amber-400">Suspensa</span>
+                    ) : (c as any).isOverdue ? (
+                      <span className="text-red-400">Inadimplente</span>
+                    ) : (
+                      <span className="text-emerald-400">Ativa</span>
+                    )}
+                  </td>
+                  <td className="py-2 text-right">
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteCompany(c.id)}
+                      className="inline-flex items-center justify-center w-7 h-7 rounded-full border border-red-500/40 text-red-400 hover:bg-red-500/10 hover:text-red-200 text-xs"
+                      title="Excluir empresa"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </td>
+                </tr>
               ))}
               {companies.length === 0 && (
                 <tr>
@@ -1529,7 +1468,6 @@ const MasterCompanyList = () => {
     </div>
   );
 };
-
 // --------------------
 // Layouts protegidos
 // --------------------
@@ -1669,9 +1607,7 @@ const LoginPage = () => {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder={
-                mode === 'master'
-                  ? 'master@gestorit.com'
-                  : 'admin@gestorit.com'
+                mode === 'master' ? 'master@gestorit.com' : 'admin@gestorit.com'
               }
             />
           </div>
@@ -1719,6 +1655,805 @@ const RequireAuth = ({ children }: { children: JSX.Element }) => {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
   return children;
+};
+
+// --------------------
+// Menu Usuários do Tenant (Router)
+// --------------------
+
+const TenantUsersPage = () => {
+  const { users, setUsers, currentCompanyId, currentUser, setCurrentUser } =
+    useAppContext();
+
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [role, setRole] = useState('leitura');
+  // criação
+  const [avatar, setAvatar] = useState('');
+  const [avatarSource, setAvatarSource] = useState<'url' | 'file' | 'drive'>(
+    'url'
+  );
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+
+  // edição
+  const [editAvatar, setEditAvatar] = useState('');
+  const [editAvatarSource, setEditAvatarSource] = useState<
+    'url' | 'file' | 'drive'
+  >('url');
+  const [editAvatarFile, setEditAvatarFile] = useState<File | null>(null);
+  const [savingNew, setSavingNew] = useState(false);
+
+  const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editEmail, setEditEmail] = useState('');
+  const [editRole, setEditRole] = useState('leitura');
+  const [editActive, setEditActive] = useState(true);
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  const openUserDetails = (u: User) => {
+    setSelectedUser(u);
+    setEditName(u.name);
+    setEditEmail(u.email);
+    setEditRole((u as any).role || 'leitura');
+    setEditActive((u as any).active !== false);
+    setEditAvatar((u as any).avatarUrl || '');
+    setEditAvatarSource('url');
+    setEditAvatarFile(null);
+  };
+
+  const handleCreateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentCompanyId) {
+      alert('Empresa não selecionada.');
+      return;
+    }
+    if (!name.trim() || !email.trim()) {
+      alert('Nome e e-mail são obrigatórios.');
+      return;
+    }
+
+    try {
+      setSavingNew(true);
+      const created = await tenantApi.createUser(currentCompanyId, {
+        name,
+        email,
+        role,
+        active: true,
+        avatarUrl: avatar || undefined,
+      });
+
+      setUsers((prev) => [...prev, created]);
+      setName('');
+      setEmail('');
+      setRole('leitura');
+      setAvatar(''); // Limpar avatar após criar
+    } catch (error) {
+      console.error(error);
+      alert('Erro ao criar usuário.');
+    } finally {
+      setSavingNew(false);
+    }
+  };
+
+  const handleSaveUser = async () => {
+    if (!selectedUser || !currentCompanyId) return;
+
+    try {
+      setSavingEdit(true);
+      const updated = await tenantApi.updateUser(
+        currentCompanyId,
+        selectedUser.id,
+        {
+          name: editName,
+          email: editEmail,
+          role: editRole,
+          active: editActive,
+          avatarUrl: editAvatar || undefined,
+        }
+      );
+
+      setUsers((prev) => prev.map((u) => (u.id === updated.id ? updated : u)));
+      setSelectedUser(updated);
+
+      if (currentUser && currentUser.id === updated.id) {
+        setCurrentUser(updated);
+        localStorage.setItem('gestorit_user', JSON.stringify(updated));
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Erro ao salvar usuário.');
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const handleNewAvatarFileChange = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const url = await tenantApi.uploadAvatar(file);
+      setAvatar(url);
+      setAvatarFile(file);
+      setAvatarSource('file');
+    } catch (error) {
+      console.error(error);
+      alert('Erro ao enviar avatar.');
+    }
+  };
+
+  const handleEditAvatarFileChange = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const url = await tenantApi.uploadAvatar(file);
+      setEditAvatar(url);
+      setEditAvatarFile(file);
+      setEditAvatarSource('file');
+    } catch (error) {
+      console.error(error);
+      alert('Erro ao enviar avatar.');
+    }
+  };
+
+  const handleToggleActive = async () => {
+    if (!selectedUser || !currentCompanyId) return;
+    try {
+      setSavingEdit(true);
+      const updated = await tenantApi.suspendUser(
+        currentCompanyId,
+        selectedUser.id,
+        !editActive
+      );
+      setUsers((prev) => prev.map((u) => (u.id === updated.id ? updated : u)));
+      setEditActive(updated.active ?? true);
+      setSelectedUser(updated);
+    } catch (error) {
+      console.error(error);
+      alert('Erro ao alterar status do usuário.');
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const handleDeleteUser = async () => {
+    if (!selectedUser || !currentCompanyId) return;
+    if (!confirm('Deseja realmente excluir este usuário?')) return;
+
+    try {
+      setSavingEdit(true);
+      await tenantApi.deleteUser(currentCompanyId, selectedUser.id);
+      setUsers((prev) => prev.filter((u) => u.id !== selectedUser.id));
+      setSelectedUser(null);
+    } catch (error) {
+      console.error(error);
+      alert('Erro ao excluir usuário.');
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const handleDeleteFromList = async (e: React.MouseEvent, user: User) => {
+    e.stopPropagation();
+    if (!currentCompanyId) return;
+    if (!window.confirm('Deseja realmente excluir este usuário?')) return;
+
+    try {
+      await tenantApi.deleteUser(currentCompanyId, user.id);
+      setUsers((prev) => prev.filter((u) => u.id !== user.id));
+      if (selectedUser?.id === user.id) {
+        setSelectedUser(null);
+      }
+    } catch (error) {
+      console.error(error);
+      alert('Erro ao excluir usuário.');
+    }
+  };
+
+  const effectiveAvatar = selectedUser
+    ? editAvatar ||
+      (selectedUser as any).avatarUrl ||
+      '/static/avatars/default.png'
+    : '/static/avatars/default.png';
+	return (
+    <div className="p-6 space-y-4 relative">
+      <h2 className="text-lg font-semibold text-gray-900">
+        Usuários da Empresa
+      </h2>
+
+      {/* Form de novo usuário (Layout Otimizado) */}
+      <form
+        onSubmit={handleCreateUser}
+        className="bg-white rounded-lg shadow-sm border border-gray-100 p-4 flex flex-col md:flex-row gap-3 md:items-end text-xs"
+      >
+        <div className="flex-1">
+          <label className="block text-gray-500 mb-1">Nome *</label>
+          <input
+            className="w-full border border-gray-200 rounded-md px-2 py-1.5"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Nome completo"
+          />
+        </div>
+
+        <div className="flex-1">
+          <label className="block text-gray-500 mb-1">E-mail *</label>
+          <input
+            type="email"
+            className="w-full border border-gray-200 rounded-md px-2 py-1.5"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="email@empresa.com"
+          />
+        </div>
+
+        <div>
+          <label className="block text-gray-500 mb-1">Papel</label>
+          <select
+            className="border border-gray-200 rounded-md px-2 py-1.5"
+            value={role}
+            onChange={(e) => setRole(e.target.value)}
+          >
+            <option value="leitura">Leitura</option>
+            <option value="tecnico">Técnico</option>
+            <option value="gestor_ti">Gestor TI</option>
+            <option value="admin_empresa">Admin Empresa</option>
+          </select>
+        </div>
+
+        {/* BLOCO AVATAR */}
+        <div className="flex-1 flex flex-col">
+          <div className="flex justify-between items-center mb-1">
+            <label className="text-gray-500">Avatar</label>
+            <button
+              type="button"
+              onClick={() => {
+                setAvatar('/static/avatars/default.png');
+                setAvatarSource('url');
+              }}
+              className="text-[10px] text-gray-500 hover:text-gray-700 underline"
+            >
+              Usar avatar padrão
+            </button>
+          </div>
+
+          <div className="flex items-end gap-3">
+            <div className="w-8 h-8 rounded-full overflow-hidden border border-gray-200 bg-gray-100 flex items-center justify-center text-[10px] text-gray-500 shrink-0">
+              <img
+                src={avatar || '/static/avatars/default.png'}
+                alt="Avatar preview"
+                className="w-full h-full object-cover"
+              />
+            </div>
+
+            <div className="flex gap-2 flex-1">
+              <select
+                className="border border-gray-200 rounded-md px-2 py-1.5 text-xs w-28 shrink-0"
+                value={avatarSource}
+                onChange={(e) =>
+                  setAvatarSource(e.target.value as 'url' | 'file' | 'drive')
+                }
+              >
+                <option value="url">URL</option>
+                <option value="file">Dispositivo</option>
+                <option value="drive">Drive</option>
+              </select>
+
+              <div className="flex-1 min-w-[100px]">
+                {avatarSource === 'url' && (
+                  <input
+                    className="w-full border border-gray-200 rounded-md px-2 py-1.5 text-xs"
+                    value={avatar}
+                    onChange={(e) => setAvatar(e.target.value)}
+                    placeholder="https://... (opcional)"
+                  />
+                )}
+                {avatarSource === 'file' && (
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="w-full text-[11px] py-1.5"
+                    onChange={handleNewAvatarFileChange}
+                  />
+                )}
+                {avatarSource === 'drive' && (
+                  <input
+                    className="w-full border border-gray-200 rounded-md px-2 py-1.5 text-[11px]"
+                    placeholder="Drive em breve"
+                    disabled
+                  />
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center">
+          <button
+            type="submit"
+            disabled={savingNew}
+            className="inline-flex items-center justify-center px-3 py-1.5 rounded-md bg-indigo-600 hover:bg-indigo-700 text-xs font-medium text-white disabled:opacity-60 h-[34px]"
+          >
+            {savingNew ? 'Salvando...' : 'Adicionar usuário'}
+          </button>
+        </div>
+      </form>
+
+      {/* Lista de usuários */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs text-gray-500 border-b">
+                <th className="py-2 px-2">Nome</th>
+                <th className="py-2 px-2">E-mail</th>
+                <th className="py-2 px-2">Papel</th>
+                <th className="py-2 px-2">Status</th>
+                <th className="py-2 px-2 text-right">Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              {users.map((u) => (
+                <tr
+                  key={u.id}
+                  className="border-b last:border-0 hover:bg-gray-50 cursor-pointer"
+                  onClick={() => openUserDetails(u)}
+                >
+                  <td className="py-2 px-2">{u.name}</td>
+                  <td className="py-2 px-2 text-xs text-gray-600">{u.email}</td>
+                  <td className="py-2 px-2 text-xs">{(u as any).role || '-'}</td>
+                  <td className="py-2 px-2 text-xs">
+                    {(u as any).active === false ? (
+                      <span className="text-red-600">Inativo</span>
+                    ) : (
+                      <span className="text-green-600">Ativo</span>
+                    )}
+                  </td>
+                  <td className="py-2 px-2 text-right">
+                    <button
+                      type="button"
+                      onClick={(e) => handleDeleteFromList(e, u)}
+                      className="inline-flex items-center justify-center w-7 h-7 rounded-full border border-red-100 text-red-500 hover:bg-red-50 hover:text-red-700"
+                      title="Excluir usuário"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {users.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={5}
+                    className="py-4 text-center text-xs text-gray-500"
+                  >
+                    Nenhum usuário cadastrado.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Painel de detalhes/edição (Layout Otimizado) */}
+      {selectedUser && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-lg p-6 space-y-4">
+            <div className="flex justify-between items-center pb-2 border-b border-gray-100">
+              <h3 className="text-base font-semibold text-gray-900">
+                Detalhes e Edição do Usuário
+              </h3>
+              <button
+                onClick={() => setSelectedUser(null)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="flex items-start gap-6">
+              {/* Bloco Avatar */}
+              <div className="flex flex-col items-center gap-2 pt-1 w-32 shrink-0">
+                <div className="w-20 h-20 rounded-full overflow-hidden border border-gray-200 bg-gray-100 flex items-center justify-center text-xs text-gray-500 shadow-md">
+                  <img
+                    src={effectiveAvatar}
+                    alt={selectedUser.name}
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditAvatar('/static/avatars/default.png');
+                    setEditAvatarSource('url');
+                  }}
+                  className="text-[10px] text-gray-500 hover:text-gray-700 underline"
+                >
+                  Usar Padrão
+                </button>
+              </div>
+
+              {/* Dados e Controles */}
+              <div className="flex-1 space-y-3">
+                <div className="flex flex-col mb-4">
+                  <div className="text-sm text-gray-700 font-semibold">
+                    {selectedUser.name}
+                  </div>
+                  <div className="flex items-center gap-2 text-[11px] text-gray-500 mt-0.5">
+                    <span className="font-medium">ID:</span>
+                    <span className="text-gray-600">{selectedUser.id}</span>
+                    <span className="mx-1 text-gray-300">|</span>
+                    <span className="font-medium">Email:</span>
+                    <span className="text-gray-600">{selectedUser.email}</span>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-gray-900 mb-1">
+                    Alterar Avatar
+                  </label>
+                  <div className="flex gap-2">
+                    <select
+                      className="border border-gray-200 rounded-md px-2 py-1.5 text-xs w-28 shrink-0"
+                      value={editAvatarSource}
+                      onChange={(e) =>
+                        setEditAvatarSource(
+                          e.target.value as 'url' | 'file' | 'drive'
+                        )
+                      }
+                    >
+                      <option value="url">URL</option>
+                      <option value="file">Dispositivo</option>
+                      <option value="drive">Drive</option>
+                    </select>
+
+                    <div className="flex-1">
+                      {editAvatarSource === 'url' && (
+                        <input
+                          className="w-full border border-gray-200 rounded-md px-2 py-1.5 text-xs"
+                          value={editAvatar}
+                          onChange={(e) => setEditAvatar(e.target.value)}
+                          placeholder="https://..."
+                        />
+                      )}
+                      {editAvatarSource === 'file' && (
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="w-full text-xs py-1.5"
+                          onChange={handleEditAvatarFileChange}
+                        />
+                      )}
+                      {editAvatarSource === 'drive' && (
+                        <input
+                          className="w-full border border-gray-200 rounded-md px-2 py-1.5 text-xs"
+                          placeholder="Drive em breve"
+                          disabled
+                        />
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <hr className="my-3 border-gray-100" />
+
+            {/* Campos de Edição Geral */}
+            <div className="space-y-3 text-xs">
+              <div className="flex gap-4">
+                <div className="flex-1">
+                  <label className="block text-gray-500 mb-1">Nome</label>
+                  <input
+                    className="w-full border border-gray-200 rounded-md px-2 py-1.5"
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                  />
+                </div>
+                <div className="flex-1">
+                  <label className="block text-gray-500 mb-1">E-mail</label>
+                  <input
+                    className="w-full border border-gray-200 rounded-md px-2 py-1.5"
+                    value={editEmail}
+                    onChange={(e) => setEditEmail(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-4 items-center">
+                <div>
+                  <label className="block text-gray-500 mb-1">Papel</label>
+                  <select
+                    className="border border-gray-200 rounded-md px-2 py-1.5"
+                    value={editRole}
+                    onChange={(e) => setEditRole(e.target.value)}
+                  >
+                    <option value="leitura">Leitura</option>
+                    <option value="tecnico">Técnico</option>
+                    <option value="gestor_ti">Gestor TI</option>
+                    <option value="admin_empresa">Admin Empresa</option>
+                  </select>
+                </div>
+
+                <div className="flex items-center gap-2 pt-5">
+                  <input
+                    id="user-active"
+                    type="checkbox"
+                    checked={editActive}
+                    onChange={(e) => setEditActive(e.target.checked)}
+                    className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+                  />
+                  <label
+                    htmlFor="user-active"
+                    className="text-xs text-gray-600"
+                  >
+                    Ativo
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <hr className="my-3 border-gray-100" />
+
+            <div className="flex justify-between items-center pt-2">
+              <button
+                type="button"
+                disabled={savingEdit}
+                onClick={handleDeleteUser}
+                className="inline-flex items-center gap-1 text-red-600 text-xs hover:text-red-700 disabled:opacity-60"
+              >
+                <Trash2 size={14} />
+                Excluir usuário
+              </button>
+
+              <div className="flex gap-2 ml-auto">
+                <button
+                  type="button"
+                  onClick={handleToggleActive}
+                  disabled={savingEdit}
+                  className="px-3 py-1.5 rounded-md border border-gray-200 text-xs hover:bg-gray-50 disabled:opacity-60"
+                >
+                  {editActive ? 'Suspender' : 'Reativar'}
+                </button>
+
+                <button
+                  type="button"
+                  disabled={savingEdit}
+                  onClick={handleSaveUser}
+                  className="px-3 py-1.5 rounded-md bg-indigo-600 text-white text-xs font-medium disabled:opacity-60 hover:bg-indigo-700"
+                >
+                  {savingEdit ? 'Salvando...' : 'Salvar alterações'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+// --------------------
+// Layout organizado com seções de Tipos e Modelos de equipamentos
+// --------------------
+
+const SettingsPage = () => {
+  const [types, setTypes] = useState<string[]>([
+    'Notebook',
+    'Desktop',
+    'Monitor',
+  ]);
+  const [models, setModels] = useState<string[]>(['Dell Inspiron 15']);
+  const [customStatuses, setCustomStatuses] = useState<string[]>([
+    'Aguardando peça',
+  ]);
+
+  const [newType, setNewType] = useState('');
+  const [newModel, setNewModel] = useState('');
+  const [newStatus, setNewStatus] = useState('');
+
+  const addType = () => {
+    if (!newType.trim()) return;
+    setTypes((prev) => [...prev, newType.trim()]);
+    setNewType('');
+  };
+
+  const addModel = () => {
+    if (!newModel.trim()) return;
+    setModels((prev) => [...prev, newModel.trim()]);
+    setNewModel('');
+  };
+
+  const addStatus = () => {
+    if (!newStatus.trim()) return;
+    setCustomStatuses((prev) => [...prev, newStatus.trim()]);
+    setNewStatus('');
+  };
+
+  const removeItem = (
+    list: string[],
+    setter: React.Dispatch<React.SetStateAction<string[]>>,
+    value: string
+  ) => {
+    setter(list.filter((item) => item !== value));
+  };
+
+  return (
+    <div className="p-6 space-y-4">
+      <h2 className="text-lg font-semibold text-gray-900">
+        Configurações da Empresa
+      </h2>
+
+      <div className="grid md:grid-cols-3 gap-4">
+        {/* Tipos de equipamento */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4 space-y-3">
+          <h3 className="text-sm font-semibold text-gray-800">
+            Tipos de Equipamento
+          </h3>
+          <p className="text-xs text-gray-500">
+            Defina os tipos mais comuns utilizados nesta empresa (ex.: Notebook,
+            Desktop, Monitor).
+          </p>
+
+          <div className="flex gap-2 text-xs">
+            <input
+              className="flex-1 border border-gray-200 rounded-md px-2 py-1.5"
+              value={newType}
+              onChange={(e) => setNewType(e.target.value)}
+              placeholder="Novo tipo..."
+            />
+            <button
+              type="button"
+              onClick={addType}
+              className="px-3 py-1.5 rounded-md bg-indigo-600 text-white text-xs hover:bg-indigo-700"
+            >
+              Adicionar
+            </button>
+          </div>
+
+          <ul className="mt-2 space-y-1 text-xs">
+            {types.map((t) => (
+              <li
+                key={t}
+                className="flex justify-between items-center border border-gray-100 rounded-md px-2 py-1"
+              >
+                <span>{t}</span>
+                <button
+                  type="button"
+                  onClick={() => removeItem(types, setTypes, t)}
+                  className="text-gray-400 hover:text-red-500"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </li>
+            ))}
+            {types.length === 0 && (
+              <li className="text-[11px] text-gray-400">
+                Nenhum tipo cadastrado.
+              </li>
+            )}
+          </ul>
+
+          <p className="text-[11px] text-gray-400 pt-2">
+            Em breve: sincronização com tipos globais definidos pelo Painel
+            Master e envio de sugestões com base no uso real.
+          </p>
+        </div>
+
+        {/* Modelos */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4 space-y-3">
+          <h3 className="text-sm font-semibold text-gray-800">Modelos</h3>
+          <p className="text-xs text-gray-500">
+            Mantenha um catálogo de modelos frequentes para agilizar o cadastro.
+          </p>
+
+          <div className="flex gap-2 text-xs">
+            <input
+              className="flex-1 border border-gray-200 rounded-md px-2 py-1.5"
+              value={newModel}
+              onChange={(e) => setNewModel(e.target.value)}
+              placeholder="Novo modelo..."
+            />
+            <button
+              type="button"
+              onClick={addModel}
+              className="px-3 py-1.5 rounded-md bg-indigo-600 text-white text-xs hover:bg-indigo-700"
+            >
+              Adicionar
+            </button>
+          </div>
+
+          <ul className="mt-2 space-y-1 text-xs">
+            {models.map((m) => (
+              <li
+                key={m}
+                className="flex justify-between items-center border border-gray-100 rounded-md px-2 py-1"
+              >
+                <span>{m}</span>
+                <button
+                  type="button"
+                  onClick={() => removeItem(models, setModels, m)}
+                  className="text-gray-400 hover:text-red-500"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </li>
+            ))}
+            {models.length === 0 && (
+              <li className="text-[11px] text-gray-400">
+                Nenhum modelo cadastrado.
+              </li>
+            )}
+          </ul>
+
+          <p className="text-[11px] text-gray-400 pt-2">
+            Em breve: auto-sugestão a partir dos equipamentos criados e envio
+            automático de novos modelos para a base Master.
+          </p>
+        </div>
+
+        {/* Estados customizados */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4 space-y-3">
+          <h3 className="text-sm font-semibold text-gray-800">
+            Estados customizados
+          </h3>
+          <p className="text-xs text-gray-500">
+            Além dos estados padrão (Funcionando, Em manutenção, etc.), defina
+            estados específicos para esta empresa.
+          </p>
+
+          <div className="flex gap-2 text-xs">
+            <input
+              className="flex-1 border border-gray-200 rounded-md px-2 py-1.5"
+              value={newStatus}
+              onChange={(e) => setNewStatus(e.target.value)}
+              placeholder="Novo estado..."
+            />
+            <button
+              type="button"
+              onClick={addStatus}
+              className="px-3 py-1.5 rounded-md bg-indigo-600 text-white text-xs hover:bg-indigo-700"
+            >
+              Adicionar
+            </button>
+          </div>
+
+          <ul className="mt-2 space-y-1 text-xs">
+            {customStatuses.map((s) => (
+              <li
+                key={s}
+                className="flex justify-between items-center border border-gray-100 rounded-md px-2 py-1"
+              >
+                <span>{s}</span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    removeItem(customStatuses, setCustomStatuses, s)
+                  }
+                  className="text-gray-400 hover:text-red-500"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </li>
+            ))}
+            {customStatuses.length === 0 && (
+              <li className="text-[11px] text-gray-400">
+                Nenhum estado customizado.
+              </li>
+            )}
+          </ul>
+
+          <p className="text-[11px] text-gray-400 pt-2">
+            Em breve: integração com o cadastro de estados globais e propagação
+            desses estados para o histórico de equipamentos.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
 };
 
 // --------------------
@@ -1777,638 +2512,5 @@ const App = () => {
     </React.StrictMode>
   );
 };
-
-// --------------------
-// Menu Usuários do Tenant (Router)
-// --------------------
-
-const TenantUsersPage = () => {
-  const { users, setUsers, currentCompanyId } = useAppContext();
-
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [role, setRole] = useState('leitura');
-  const [avatar, setAvatar] = useState('');        // NOVO
-  const [savingNew, setSavingNew] = useState(false);
-
-  const [selectedUser, setSelectedUser] = useState<User | null>(null);
-  const [editName, setEditName] = useState('');
-  const [editEmail, setEditEmail] = useState('');
-  const [editRole, setEditRole] = useState('leitura');
-  const [editActive, setEditActive] = useState(true);
-  const [savingEdit, setSavingEdit] = useState(false);
-  const [editAvatar, setEditAvatar] = useState('');  // NOVO
-
-  const openUserDetails = (u: User) => {
-    setSelectedUser(u);
-    setEditName(u.name);
-    setEditEmail(u.email);
-    setEditRole((u as any).role || 'leitura');
-    setEditActive((u as any).active !== false);
-	setEditAvatar((u as any).avatarUrl || '');      // NOVO
-  };
-
-  const handleCreateUser = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!currentCompanyId) {
-      alert('Empresa não selecionada.');
-      return;
-    }
-    if (!name.trim() || !email.trim()) {
-      alert('Nome e e-mail são obrigatórios.');
-      return;
-    }
-
-    try {
-      setSavingNew(true);
-      const created = await tenantApi.createUser(currentCompanyId, {
-        name,
-        email,
-        role,
-        active: true,
-      });
-	  const payload: Partial<User> = {
-	    name,
-	    email,
-	    role,
-	    avatarUrl: avatar || undefined,
-	  };
-      setUsers((prev) => [...prev, created]);
-      setName('');
-      setEmail('');
-      setRole('leitura');
-    } catch (error) {
-      console.error(error);
-      alert('Erro ao criar usuário.');
-    } finally {
-      setSavingNew(false);
-    }
-  };
-
-  const handleSaveUser = async () => {
-    if (!selectedUser || !currentCompanyId) return;
-
-    try {
-      setSavingEdit(true);
-      const updated = await tenantApi.updateUser(
-        currentCompanyId,
-        selectedUser.id,
-        {
-          name: editName,
-          email: editEmail,
-          role: editRole,
-          active: editActive,
-		  avatarUrl: editAvatar || undefined,  // <- NOVO
-        }
-      );
-      setUsers((prev) =>
-        prev.map((u) => (u.id === updated.id ? updated : u))
-      );
-      setSelectedUser(updated);
-    } catch (error) {
-      console.error(error);
-      alert('Erro ao salvar usuário.');
-    } finally {
-      setSavingEdit(false);
-    }
-  };
-
-  const handleToggleActive = async () => {
-    if (!selectedUser || !currentCompanyId) return;
-    try {
-      setSavingEdit(true);
-      const updated = await tenantApi.suspendUser(
-        currentCompanyId,
-        selectedUser.id,
-        !editActive
-      );
-      setUsers((prev) =>
-        prev.map((u) => (u.id === updated.id ? updated : u))
-      );
-      setEditActive(updated.active ?? true);
-      setSelectedUser(updated);
-    } catch (error) {
-      console.error(error);
-      alert('Erro ao alterar status do usuário.');
-    } finally {
-      setSavingEdit(false);
-    }
-  };
-
-  const handleDeleteUser = async () => {
-    if (!selectedUser || !currentCompanyId) return;
-    if (!confirm('Deseja realmente excluir este usuário?')) return;
-
-    try {
-      setSavingEdit(true);
-      await tenantApi.deleteUser(currentCompanyId, selectedUser.id);
-      setUsers((prev) => prev.filter((u) => u.id !== selectedUser.id));
-      setSelectedUser(null);
-    } catch (error) {
-      console.error(error);
-      alert('Erro ao excluir usuário.');
-    } finally {
-      setSavingEdit(false);
-    }
-  };
-  
-  const handleDeleteFromList = async (
-    e: React.MouseEvent,
-    user: User
-  ) => {
-    e.stopPropagation();
-    if (!currentCompanyId) return;
-    if (!window.confirm('Deseja realmente excluir este usuário?')) return;
-
-    try {
-      await tenantApi.deleteUser(currentCompanyId, user.id);
-      setUsers((prev) => prev.filter((u) => u.id !== user.id));
-      if (selectedUser?.id === user.id) {
-        setSelectedUser(null);
-      }
-    } catch (error) {
-      console.error(error);
-      alert('Erro ao excluir usuário.');
-    }
-  };
-
-  return (
-    <div className="p-6 space-y-4 relative">
-      <h2 className="text-lg font-semibold text-gray-900">
-        Usuários da Empresa
-      </h2>
-
-      {/* Form de novo usuário */}
-      <form
-        onSubmit={handleCreateUser}
-        className="bg-white rounded-lg shadow-sm border border-gray-100 p-4 flex flex-col md:flex-row gap-3 md:items-end text-xs"
-      >
-        <div className="flex-1">
-          <label className="block text-gray-500 mb-1">Nome *</label>
-          <input
-            className="w-full border border-gray-200 rounded-md px-2 py-1.5"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Nome completo"
-          />
-        </div>
-        <div className="flex-1">
-          <label className="block text-gray-500 mb-1">E-mail *</label>
-          <input
-            type="email"
-            className="w-full border border-gray-200 rounded-md px-2 py-1.5"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="email@empresa.com"
-          />
-        </div>
-        <div>
-          <label className="block text-gray-500 mb-1">Papel</label>
-          <select
-            className="border border-gray-200 rounded-md px-2 py-1.5"
-            value={role}
-            onChange={(e) => setRole(e.target.value)}
-          >
-            <option value="leitura">Leitura</option>
-            <option value="tecnico">Técnico</option>
-            <option value="gestor_ti">Gestor TI</option>
-            <option value="admin_empresa">Admin Empresa</option>
-          </select>
-        </div>
-        <div className="flex-1">
-          <label className="block text-gray-500 mb-1">
-            Avatar (URL)
-          </label>
-          <input
-            className="w-full border border-gray-200 rounded-md px-2 py-1.5"
-            value={avatar}
-            onChange={(e) => setAvatar(e.target.value)}
-            placeholder="https://... (opcional)"
-          />
-        </div>
-        <button
-          type="submit"
-          disabled={savingNew}
-          className="inline-flex items-center justify-center px-3 py-1.5 rounded-md bg-indigo-600 hover:bg-indigo-700 text-xs font-medium text-white disabled:opacity-60"
-        >
-          {savingNew ? 'Salvando...' : 'Adicionar usuário'}
-        </button>
-      </form>
-
-      {/* Lista de usuários */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-xs text-gray-500 border-b">
-                <th className="py-2 px-2">Nome</th>
-                <th className="py-2 px-2">E-mail</th>
-                <th className="py-2 px-2">Papel</th>
-                <th className="py-2 px-2">Status</th>
-				<th className="py-2 px-2 text-right">Ações</th> {/* NOVO */}
-              </tr>
-            </thead>
-            <tbody>
-              {users.map((u) => (
-				<tr
-				  key={u.id}
-				  className="border-b last:border-0 hover:bg-gray-50 cursor-pointer"
-				  onClick={() => openUserDetails(u)}
-				>
-				  <td className="py-2 px-2">{u.name}</td>
-				  <td className="py-2 px-2 text-xs text-gray-600">{u.email}</td>
-				  <td className="py-2 px-2 text-xs">
-					{(u as any).role || '-'}
-				  </td>
-				  <td className="py-2 px-2 text-xs">
-					{(u as any).active === false ? (
-					  <span className="text-red-600">Inativo</span>
-					) : (
-					  <span className="text-green-600">Ativo</span>
-					)}
-				  </td>
-				  <td className="py-2 px-2 text-right">
-					<button
-					  type="button"
-					  onClick={(e) => handleDeleteFromList(e, u)}
-					  className="inline-flex items-center justify-center w-7 h-7 rounded-full border border-red-100 text-red-500 hover:bg-red-50 hover:text-red-700"
-					  title="Excluir usuário"
-					>
-					  <Trash2 size={14} />
-					</button>
-				  </td>
-				</tr>
-
-              ))}
-              {users.length === 0 && (
-                <tr>
-                  <td
-                    colSpan={5}
-                    className="py-4 text-center text-xs text-gray-500"
-                  >
-                    Nenhum usuário cadastrado.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Painel de detalhes/edição */}
-      {selectedUser && (
-        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-lg p-4 space-y-3">
-            <div className="flex justify-between items-center">
-              <h3 className="text-sm font-semibold text-gray-900">
-                Detalhes do Usuário
-              </h3>
-              <button
-                onClick={() => setSelectedUser(null)}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                <X size={16} />
-              </button>
-            </div>
-            <div className="space-y-3 text-xs">
-              <div className="flex items-center gap-3">
-                {selectedUser.avatarUrl && (
-                  <img
-                    src={selectedUser.avatarUrl}
-                    alt={selectedUser.name}
-                    className="w-10 h-10 rounded-full object-cover border border-gray-200"
-                  />
-                )}
-                <div>
-                  <div className="text-[11px] text-gray-500">
-                    ID: {selectedUser.id}
-                  </div>
-                  <div className="text-xs text-gray-700 font-medium">
-                    {selectedUser.name}
-                  </div>
-                  <div className="text-[11px] text-gray-500">
-                    {selectedUser.email}
-                  </div>
-                </div>
-              </div>
-			</div>
-            <div className="space-y-3 text-xs">
-              <div>
-                <label className="block text-gray-500 mb-1">Nome</label>
-                <input
-                  className="w-full border border-gray-200 rounded-md px-2 py-1.5"
-                  value={editName}
-                  onChange={(e) => setEditName(e.target.value)}
-                />
-              </div>
-              <div>
-                <label className="block text-gray-500 mb-1">E-mail</label>
-                <input
-                  className="w-full border border-gray-200 rounded-md px-2 py-1.5"
-                  value={editEmail}
-                  onChange={(e) => setEditEmail(e.target.value)}
-                />
-              </div>
-              <div className="flex gap-3 items-center">
-                <div>
-                  <label className="block text-gray-500 mb-1">Papel</label>
-                  <select
-                    className="border border-gray-200 rounded-md px-2 py-1.5"
-                    value={editRole}
-                    onChange={(e) => setEditRole(e.target.value)}
-                  >
-                    <option value="leitura">Leitura</option>
-                    <option value="tecnico">Técnico</option>
-                    <option value="gestor_ti">Gestor TI</option>
-                    <option value="admin_empresa">Admin Empresa</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-gray-500 mb-1">
-                    Avatar (URL)
-                  </label>
-                  <input
-                    className="w-full border border-gray-200 rounded-md px-2 py-1.5"
-                    value={editAvatar}
-                    onChange={(e) => setEditAvatar(e.target.value)}
-                  />
-                </div>
-                <div className="flex items-center gap-2 mt-4">
-                  <input
-                    id="user-active"
-                    type="checkbox"
-                    checked={editActive}
-                    onChange={(e) => setEditActive(e.target.checked)}
-                  />
-                  <label
-                    htmlFor="user-active"
-                    className="text-xs text-gray-600"
-                  >
-                    Ativo
-                  </label>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex justify-between items-center pt-2">
-              <button
-                type="button"
-                disabled={savingEdit}
-                onClick={handleDeleteUser}
-                className="inline-flex items-center gap-1 text-red-600 text-xs hover:text-red-700"
-              >
-                <Trash2 size={14} />
-                Excluir usuário
-              </button>
-
-              <div className="flex gap-2 ml-auto">
-                <button
-                  type="button"
-                  onClick={handleToggleActive}
-                  disabled={savingEdit}
-                  className="px-3 py-1.5 rounded-md border border-gray-200 text-xs"
-                >
-                  {editActive ? 'Suspender' : 'Reativar'}
-                </button>
-                <button
-                  type="button"
-                  disabled={savingEdit}
-                  onClick={handleSaveUser}
-                  className="px-3 py-1.5 rounded-md bg-indigo-600 text-white text-xs font-medium disabled:opacity-60"
-                >
-                  {savingEdit ? 'Salvando...' : 'Salvar alterações'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
-
-// --------------------
-// Layout organizado com seções de Tipos e Modelos de equipamentos, sem API real (Router)
-// --------------------
-
-const SettingsPage = () => {
-  const [types, setTypes] = useState<string[]>([
-    'Notebook',
-    'Desktop',
-    'Monitor',
-  ]);
-  const [models, setModels] = useState<string[]>(['Dell Inspiron 15']);
-  const [customStatuses, setCustomStatuses] = useState<string[]>([
-    'Aguardando peça',
-  ]);
-
-  const [newType, setNewType] = useState('');
-  const [newModel, setNewModel] = useState('');
-  const [newStatus, setNewStatus] = useState('');
-
-  const addType = () => {
-    if (!newType.trim()) return;
-    setTypes((prev) => [...prev, newType.trim()]);
-    setNewType('');
-  };
-
-  const addModel = () => {
-    if (!newModel.trim()) return;
-    setModels((prev) => [...prev, newModel.trim()]);
-    setNewModel('');
-  };
-
-  const addStatus = () => {
-    if (!newStatus.trim()) return;
-    setCustomStatuses((prev) => [...prev, newStatus.trim()]);
-    setNewStatus('');
-  };
-
-  const removeItem = (
-    list: string[],
-    setter: React.Dispatch<React.SetStateAction<string[]>>,
-    value: string
-  ) => {
-    setter(list.filter((item) => item !== value));
-  };
-
-  return (
-    <div className="p-6 space-y-4">
-      <h2 className="text-lg font-semibold text-gray-900">
-        Configurações da Empresa
-      </h2>
-
-      <div className="grid md:grid-cols-3 gap-4">
-        {/* Tipos de equipamento */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4 space-y-3">
-          <h3 className="text-sm font-semibold text-gray-800">
-            Tipos de Equipamento
-          </h3>
-          <p className="text-xs text-gray-500">
-            Defina os tipos mais comuns utilizados nesta empresa (ex.:
-            Notebook, Desktop, Monitor).
-          </p>
-
-          <div className="flex gap-2 text-xs">
-            <input
-              className="flex-1 border border-gray-200 rounded-md px-2 py-1.5"
-              value={newType}
-              onChange={(e) => setNewType(e.target.value)}
-              placeholder="Novo tipo..."
-            />
-            <button
-              type="button"
-              onClick={addType}
-              className="px-3 py-1.5 rounded-md bg-indigo-600 text-white text-xs hover:bg-indigo-700"
-            >
-              Adicionar
-            </button>
-          </div>
-
-          <ul className="mt-2 space-y-1 text-xs">
-            {types.map((t) => (
-              <li
-                key={t}
-                className="flex justify-between items-center border border-gray-100 rounded-md px-2 py-1"
-              >
-                <span>{t}</span>
-                <button
-                  type="button"
-                  onClick={() => removeItem(types, setTypes, t)}
-                  className="text-gray-400 hover:text-red-500"
-                >
-                  <Trash2 size={14} />
-                </button>
-              </li>
-            ))}
-            {types.length === 0 && (
-              <li className="text-[11px] text-gray-400">
-                Nenhum tipo cadastrado.
-              </li>
-            )}
-          </ul>
-
-          <p className="text-[11px] text-gray-400 pt-2">
-            Em breve: sincronização com tipos globais definidos pelo
-            Painel Master e envio de sugestões com base no uso real.
-          </p>
-        </div>
-
-        {/* Modelos */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4 space-y-3">
-          <h3 className="text-sm font-semibold text-gray-800">
-            Modelos
-          </h3>
-          <p className="text-xs text-gray-500">
-            Mantenha um catálogo de modelos frequentes para agilizar o
-            cadastro.
-          </p>
-
-          <div className="flex gap-2 text-xs">
-            <input
-              className="flex-1 border border-gray-200 rounded-md px-2 py-1.5"
-              value={newModel}
-              onChange={(e) => setNewModel(e.target.value)}
-              placeholder="Novo modelo..."
-            />
-            <button
-              type="button"
-              onClick={addModel}
-              className="px-3 py-1.5 rounded-md bg-indigo-600 text-white text-xs hover:bg-indigo-700"
-            >
-              Adicionar
-            </button>
-          </div>
-
-          <ul className="mt-2 space-y-1 text-xs">
-            {models.map((m) => (
-              <li
-                key={m}
-                className="flex justify-between items-center border border-gray-100 rounded-md px-2 py-1"
-              >
-                <span>{m}</span>
-                <button
-                  type="button"
-                  onClick={() => removeItem(models, setModels, m)}
-                  className="text-gray-400 hover:text-red-500"
-                >
-                  <Trash2 size={14} />
-                </button>
-              </li>
-            ))}
-            {models.length === 0 && (
-              <li className="text-[11px] text-gray-400">
-                Nenhum modelo cadastrado.
-              </li>
-            )}
-          </ul>
-
-          <p className="text-[11px] text-gray-400 pt-2">
-            Em breve: auto-sugestão a partir dos equipamentos criados e
-            envio automático de novos modelos para a base Master.
-          </p>
-        </div>
-
-        {/* Estados customizados */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4 space-y-3">
-          <h3 className="text-sm font-semibold text-gray-800">
-            Estados customizados
-          </h3>
-          <p className="text-xs text-gray-500">
-            Além dos estados padrão (Funcionando, Em manutenção, etc.),
-            defina estados específicos para esta empresa.
-          </p>
-
-          <div className="flex gap-2 text-xs">
-            <input
-              className="flex-1 border border-gray-200 rounded-md px-2 py-1.5"
-              value={newStatus}
-              onChange={(e) => setNewStatus(e.target.value)}
-              placeholder="Novo estado..."
-            />
-            <button
-              type="button"
-              onClick={addStatus}
-              className="px-3 py-1.5 rounded-md bg-indigo-600 text-white text-xs hover:bg-indigo-700"
-            >
-              Adicionar
-            </button>
-          </div>
-
-          <ul className="mt-2 space-y-1 text-xs">
-            {customStatuses.map((s) => (
-              <li
-                key={s}
-                className="flex justify-between items-center border border-gray-100 rounded-md px-2 py-1"
-              >
-                <span>{s}</span>
-                <button
-                  type="button"
-                  onClick={() =>
-                    removeItem(customStatuses, setCustomStatuses, s)
-                  }
-                  className="text-gray-400 hover:text-red-500"
-                >
-                  <Trash2 size={14} />
-                </button>
-              </li>
-            ))}
-            {customStatuses.length === 0 && (
-              <li className="text-[11px] text-gray-400">
-                Nenhum estado customizado.
-              </li>
-            )}
-          </ul>
-
-          <p className="text-[11px] text-gray-400 pt-2">
-            Em breve: integração com o cadastro de estados globais e
-            propagação desses estados para o histórico de equipamentos.
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-};
-
 
 export default App;
