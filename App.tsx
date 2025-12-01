@@ -45,6 +45,7 @@ import {
   Branch,
   UserRole,
 } from './types';
+import HomePage from './src/HomePage';
 import { masterApi } from './services/masterApi';
 import { tenantApi } from './services/tenantApi';
 
@@ -2466,8 +2467,13 @@ const App = () => {
       <AppProvider>
         <HashRouter>
           <Routes>
+            {/* Home pública (nova landing page) */}
+            <Route path="/" element={<HomePage />} />
+
+            {/* Login existente */}
             <Route path="/login" element={<LoginPage />} />
 
+            {/* Área Tenant (empresa cliente/prestadora) */}
             <Route
               path="/app/*"
               element={
@@ -2483,6 +2489,7 @@ const App = () => {
               <Route path="configuracoes" element={<SettingsPage />} />
             </Route>
 
+            {/* Painel Master (SaaS) */}
             <Route
               path="/master/*"
               element={
@@ -2503,9 +2510,8 @@ const App = () => {
               />
             </Route>
 
-            {/* Redirecionar raiz para login */}
-            <Route path="/" element={<Navigate to="/login" replace />} />
-            <Route path="*" element={<Navigate to="/login" replace />} />
+            {/* Fallback: qualquer rota desconhecida volta para a Home */}
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </HashRouter>
       </AppProvider>
