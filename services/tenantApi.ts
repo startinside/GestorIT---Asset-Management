@@ -9,6 +9,29 @@ import {
   AuthResponse,
 } from '../types';
 
+export interface KanbanColumn {
+  id: string;
+  companyId: string;
+  name: string;
+  order: number;
+  type: string;
+  isSchedulingColumn: boolean;
+  scheduleEnabled: boolean;
+  slaHours?: number | null;
+  color?: string | null;
+}
+
+export interface TicketEvent {
+  id: string;
+  companyId: string;
+  ticketId: string;
+  type: 'created' | 'status_changed' | string;
+  fromStatus?: string | null;
+  toStatus?: string | null;
+  note?: string | null;
+  createdAt: string;
+}
+
 export const tenantApi = {
   // ----------------------------------------------------
   // Autenticação (Tenant)
@@ -198,6 +221,27 @@ export const tenantApi = {
     return response.data.data;
   },
 
+  // Upload de imagem genérica (usado para múltiplas fotos de equipamentos, por exemplo)
+  uploadGenericImage: async (
+    companyId: string,
+    file: File
+  ): Promise<string> => {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    // Endpoint: /v1/upload/image (simétrico ao /v1/upload/avatar)
+    const response = await apiClient.post<
+      ApiResponse<{ imageUrl: string }>
+    >('/v1/upload/image', formData, {
+      headers: {
+        'X-Company-Id': companyId,
+        'Content-Type': 'multipart/form-data', // Sobrescrever para envio de arquivo
+      },
+    });
+    // Assume que a resposta retorna um objeto { imageUrl: 'url_da_imagem' }
+    return response.data.data.imageUrl;
+  },
+
   // Excluir equipamento
   deleteEquipment: async (
     companyId: string,
@@ -235,6 +279,73 @@ export const tenantApi = {
     );
     return response.data.data;
   },
+
+  // -------------------------
+  // Kanban Columns (config)
+  // -------------------------
+
+  getKanbanColumns: async (companyId: string) => {
+    const response = await apiClient.get<ApiResponse<KanbanColumn[]>>(
+      '/v1/kanban/colunas',
+      { headers: { 'X-Company-Id': companyId } }
+    );
+    return response.data.data || [];
+  },
+
+  createKanbanColumn: async (
+    companyId: string,
+    payload: Partial<KanbanColumn>
+  ) => {
+    const response = await apiClient.post<ApiResponse<KanbanColumn>>(
+      '/v1/kanban/colunas',
+      payload,
+      { headers: { 'X-Company-Id': companyId } }
+    );
+    return response.data.data;
+  },
+
+  updateKanbanColumn: async (
+    companyId: string,
+    columnId: string,
+    payload: Partial<KanbanColumn>
+  ) => {
+    const response = await apiClient.patch<ApiResponse<KanbanColumn>>(
+      `/v1/kanban/colunas/${columnId}`,
+      payload,
+      { headers: { 'X-Company-Id': companyId } }
+    );
+    return response.data.data;
+  },
+
+  deleteKanbanColumn: async (companyId: string, columnId: string) => {
+    const response = await apiClient.delete<ApiResponse<KanbanColumn>>(
+      `/v1/kanban/colunas/${columnId}`,
+      { headers: { 'X-Company-Id': companyId } }
+    );
+    return response.data.data;
+  },
+
+  reorderKanbanColumns: async (companyId: string, orderedIds: string[]) => {
+    const response = await apiClient.patch<ApiResponse<KanbanColumn[]>>(
+      '/v1/kanban/colunas/reorder',
+      { orderedIds },
+      { headers: { 'X-Company-Id': companyId } }
+    );
+    return response.data.data || [];
+  },
+
+  // -------------------------
+  // Timeline de Chamados
+  // -------------------------
+
+  getTicketTimeline: async (companyId: string, ticketId: string) => {
+    const response = await apiClient.get<ApiResponse<TicketEvent[]>>(
+      `/v1/chamados/${ticketId}/timeline`,
+      { headers: { 'X-Company-Id': companyId } }
+    );
+    return response.data.data || [];
+  },
+
 
   // Criar novo chamado
   createTicket: async (

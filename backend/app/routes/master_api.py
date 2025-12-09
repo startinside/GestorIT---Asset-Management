@@ -1,4 +1,5 @@
 from flask import Blueprint, request, jsonify
+from .general import _api_response, _get_company_id_from_header
 
 master_bp = Blueprint("master_api", __name__)
 
@@ -47,17 +48,6 @@ MASTER_USERS = [
         "companies": [c["id"] for c in COMPANIES],
     }
 ]
-
-
-def _api_response(data=None, meta=None, errors=None, status_code=200):
-    return jsonify(
-        {
-            "data": data,
-            "meta": meta or {},
-            "errors": errors,
-        }
-    ), status_code
-
 
 # -------------------------------------------------------------------
 # Autenticação Master: /api/master/v1/auth/login

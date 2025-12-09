@@ -34,6 +34,7 @@ import {
   X,
   Trash2,
   Copy,
+  Clock,
 } from 'lucide-react';
 import {
   Company,
@@ -47,7 +48,7 @@ import {
 } from './types';
 import HomePage from './src/HomePage';
 import { masterApi } from './services/masterApi';
-import { tenantApi } from './services/tenantApi';
+import { tenantApi, type TicketEvent } from './services/tenantApi';
 
 // --------------------
 // Contexto da Aplicação
@@ -545,7 +546,51 @@ const EquipmentList = () => {
   const [formPatrimonyId, setFormPatrimonyId] = useState('');
   const [formAcquisitionDate, setFormAcquisitionDate] = useState('');
   const [saving, setSaving] = useState(false);
+  // Adicione este estado junto aos outros estados de formulário:
+  const [formImageUrls, setFormImageUrls] = useState<string[]>([]); // NOVO: Lista de URLs de imagens
 
+  // Funções de upload e remoção:
+  const uploadImageFile = async (file: File): Promise<string | null> => {
+    if (!currentCompanyId || !db) return null;
+
+    try {
+	  // Usar o novo método no tenantApi
+	  const uploadedUrl = await tenantApi.uploadGenericImage(currentCompanyId, file);
+	  return uploadedUrl;
+    } catch (error) {
+	  console.error('Erro durante o upload da imagem:', error);
+	  setErrorMessage('Erro ao fazer upload da imagem.');
+	  return null;
+    }
+  };
+
+  const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (formImageUrls.length >= 20) {
+	  setErrorMessage('Limite máximo de 20 imagens atingido.');
+	  return;
+    }
+  
+    setSaving(true); // Usar saving como indicador de upload
+    const imageUrl = await uploadImageFile(file);
+    setSaving(false);
+
+    if (imageUrl) {
+	  setFormImageUrls((prevUrls) => [...prevUrls, imageUrl]);
+	  setSuccessMessage('Imagem adicionada com sucesso!');
+    }
+    // Limpa o valor do input file para permitir o upload da mesma imagem novamente
+    event.target.value = ''; 
+  };
+
+  const handleRemoveImage = (urlToRemove: string) => {
+    setFormImageUrls((prevUrls) =>
+	  prevUrls.filter((url) => url !== urlToRemove)
+    );
+    setSuccessMessage('Imagem removida.');
+  };
   const filteredEquipment = useMemo(
     () =>
       equipment.filter((eq) => {
@@ -576,6 +621,21 @@ const EquipmentList = () => {
         {st.name}
       </span>
     );
+  };
+
+  // Encontre a função 'clearForm' e adicione a linha:
+  const clearForm = () => {
+    // ... outras linhas de limpeza de estado (e.g., setFormImageUrl(''))
+    setFormImageUrls([]); // NOVO
+    // ...
+  };
+  
+  // Encontre a função 'setFormValues' e adicione a linha:
+  const setFormValues = (equipment: Equipment) => {
+    // ... outras linhas de set de estado
+    // Assume que a propriedade no objeto Equipment é 'imageUrls'
+    setFormImageUrls(equipment.imageUrls || []); // NOVO: Carregar lista de URLs
+    // ...
   };
 
   const openNewForm = () => {
@@ -673,14 +733,15 @@ const EquipmentList = () => {
       type: formType,
       brand: formBrand,
       model: formModel,
-      serialNumber: formSerial,
-      internalId: formInternalId,
+      serialNumber: formSerial || undefined,
+      internalId: formInternalId || undefined,
       branchId: formBranchId || undefined,
-      statusId: formStatusId || undefined,
-      description: formDescription,
-      imageUrl: formImageUrl || undefined,
+      statusId: formStatusId,
+      description: formDescription || undefined,
       patrimonyId: formPatrimonyId || undefined,
       acquisitionDate: formAcquisitionDate || undefined,
+      // Remova formImageUrl se não for mais usado, ou atualize abaixo
+      imageUrls: formImageUrls, // NOVO: Incluir a lista de imagens no payload
     };
 
     try {
@@ -842,29 +903,89 @@ const EquipmentList = () => {
                 <X size={16} />
               </button>
             </div>
-
+			{/* -------------------------------------------------------- */}
             <form onSubmit={handleSubmit} className="space-y-3 text-xs">
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-gray-500 mb-1">ID</label>
-                  <input
-                    className="w-full border border-gray-200 rounded-md px-2 py-1.5 bg-gray-50 text-gray-500"
-                    value={editing?.id || 'Gerado automaticamente ao salvar'}
-                    readOnly
-                  />
-                </div>
-                <div>
-                  <label className="block text-gray-500 mb-1">
-                    Avatar / URL da imagem
-                  </label>
-                  <input
-                    className="w-full border border-gray-200 rounded-md px-2 py-1.5"
-                    value={formImageUrl}
-                    onChange={(e) => setFormImageUrl(e.target.value)}
-                    placeholder="https://... (opcional)"
-                  />
-                </div>
-              </div>
+			<div className="space-y-3 mb-4 p-3 border border-gray-200 rounded-lg">
+			  <div className="flex justify-between items-center">
+				<label className="text-gray-500 text-xs">
+				  Imagens do Equipamento (máx. 20)
+				</label>
+				<label
+				  htmlFor="equipment-image-upload"
+				  className={`
+					px-3 py-1.5 rounded-md bg-indigo-600 text-white text-xs font-medium cursor-pointer transition-colors hover:bg-indigo-700
+					${formImageUrls.length >= 20 ? 'opacity-50 cursor-not-allowed' : ''}
+				  `}
+				  title={
+					formImageUrls.length >= 20
+					  ? 'Limite máximo de 20 imagens atingido'
+					  : 'Fazer upload de uma nova imagem'
+				  }
+				>
+				  <input
+					type="file"
+					id="equipment-image-upload"
+					accept="image/*"
+					onChange={handleImageUpload}
+					className="hidden"
+					disabled={formImageUrls.length >= 20}
+				  />
+				  <Plus size={14} className="inline mr-1" />
+				  Upload
+				</label>
+			  </div>
+
+			  {/* Carrossel de Miniaturas */}
+			  <div className="overflow-x-auto whitespace-nowrap py-2">
+				{formImageUrls.length === 0 ? (
+				  <p className="text-xs text-gray-400 text-center p-4 border border-dashed border-gray-300 rounded-md">
+					Nenhuma imagem adicionada. Use o botão "Upload" acima.
+				  </p>
+				) : (
+				  <div className="flex gap-3">
+					{formImageUrls.map((url, index) => (
+					  <div
+						key={url + index}
+						className="inline-block relative group flex-shrink-0"
+						style={{ width: '80px', height: '80px' }}
+					  >
+						<img
+						  src={url}
+						  alt={`Imagem ${index + 1}`}
+						  className="w-full h-full object-cover rounded-md border border-gray-300 transition duration-300 group-hover:opacity-70"
+						  onError={(e) => {
+							const target = e.target as HTMLImageElement;
+							target.onerror = null;
+							target.src = 'https://placehold.co/80x80/ef4444/ffffff?text=ERRO';
+						  }}
+						/>
+						{/* Botão de Excluir */}
+						<button
+						  type="button"
+						  onClick={() => handleRemoveImage(url)}
+						  className="absolute top-0 right-0 p-1 bg-red-600 text-white rounded-full translate-x-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition duration-300 shadow-md"
+						  title="Remover imagem"
+						>
+						  <X size={12} />
+						</button>
+					  </div>
+					))}
+				  </div>
+				)}
+			  </div>
+			</div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="col-span-1">
+                  <label className="block text-gray-500 mb-1">ID</label>
+                  <input
+                    className="w-full border border-gray-200 rounded-md px-2 py-1.5 bg-gray-50 text-gray-500"
+                    value={editing?.id || 'Gerado automaticamente ao salvar'}
+                    readOnly
+                  />
+                </div>
+                {/* O segundo campo (Avatar / URL da imagem) foi removido, 
+                    pois a nova interface de Carrossel/Upload substitui essa funcionalidade. */}
+              </div>
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="block text-gray-500 mb-1">Tipo *</label>
@@ -1006,6 +1127,7 @@ const EquipmentList = () => {
                 </div>
               </div>
             </form>
+			{/* -------------------------------------------------------- */}
           </div>
         </div>
       )}
@@ -1111,6 +1233,25 @@ const MaintenanceKanban = () => {
     return result;
   }, [tickets]);
 
+  const [timelineTicket, setTimelineTicket] = useState<MaintenanceTicket | null>(null);
+  const [timelineEvents, setTimelineEvents] = useState<TicketEvent[]>([]);
+  const [timelineLoading, setTimelineLoading] = useState(false);
+
+  const openTimeline = async (ticket: MaintenanceTicket) => {
+    if (!currentCompanyId) return;
+    setTimelineTicket(ticket);
+    setTimelineLoading(true);
+    try {
+      const events = await tenantApi.getTicketTimeline(currentCompanyId, ticket.id);
+      setTimelineEvents(events);
+    } catch (error) {
+      console.error(error);
+      alert('Erro ao carregar timeline do chamado.');
+    } finally {
+      setTimelineLoading(false);
+    }
+  };
+
   const handleCreateTicket = async () => {
     if (!currentCompanyId) {
       alert('Empresa não selecionada.');
@@ -1151,10 +1292,16 @@ const MaintenanceKanban = () => {
           </p>
         </div>
         <div className="flex gap-2">
-          <button className="bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 px-3 py-1.5 rounded-md text-xs font-medium flex items-center gap-1.5">
-            <Calendar size={14} />
-            Linha do Tempo
-          </button>
+			<button
+			  type="button"
+			  onClick={() =>
+				alert('Abra a timeline clicando no botão "Timeline" em cada card de chamado.')
+			  }
+			  className="bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 px-3 py-1.5 rounded-md text-xs font-medium flex items-center gap-1.5"
+			>
+			  <Calendar size={14} />
+			  Linha do Tempo
+			</button>
         </div>
       </div>
 
@@ -1248,9 +1395,17 @@ const MaintenanceKanban = () => {
                       {t.description}
                     </div>
                   )}
-                  <div className="mt-2 text-[10px] text-gray-400">
-                    Vencimento: {t.dueDate || '-'}
-                  </div>
+					<div className="mt-2 flex items-center justify-between text-[10px] text-gray-400">
+					  <span>Vencimento: {t.dueDate || '-'}</span>
+					  <button
+						type="button"
+						onClick={() => openTimeline(t)}
+						className="inline-flex items-center gap-1 text-indigo-600 hover:text-indigo-800"
+					  >
+						<Clock size={10} />
+						Timeline
+					  </button>
+					</div>
                 </div>
               ))}
               {!grouped[col.id]?.length && (
@@ -1262,6 +1417,89 @@ const MaintenanceKanban = () => {
           </div>
         ))}
       </div>
+		{timelineTicket && (
+		  <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+			<div className="bg-white rounded-lg shadow-xl w-full max-w-lg p-4 text-xs">
+			  <div className="flex items-center justify-between mb-3">
+				<div>
+				  <h3 className="text-sm font-semibold text-gray-900">
+					Timeline do chamado
+				  </h3>
+				  <p className="text-[11px] text-gray-500">
+					{timelineTicket.title} — ID: {timelineTicket.id}
+				  </p>
+				</div>
+				<button
+				  type="button"
+				  onClick={() => {
+					setTimelineTicket(null);
+					setTimelineEvents([]);
+				  }}
+				  className="text-gray-400 hover:text-gray-600"
+				>
+				  <X size={16} />
+				</button>
+			  </div>
+
+			  <div className="border border-gray-100 rounded-md max-h-80 overflow-y-auto p-3 space-y-2">
+				{timelineLoading && (
+				  <div className="text-[11px] text-gray-500">
+					Carregando eventos...
+				  </div>
+				)}
+
+				{!timelineLoading && timelineEvents.length === 0 && (
+				  <div className="text-[11px] text-gray-400">
+					Nenhum evento registrado para este chamado ainda.
+				  </div>
+				)}
+
+				{!timelineLoading &&
+				  timelineEvents.map((ev) => (
+					<div
+					  key={ev.id}
+					  className="border border-gray-100 rounded-md px-2 py-1.5"
+					>
+					  <div className="flex items-center justify-between">
+						<span className="text-[11px] font-semibold text-gray-800">
+						  {ev.type === 'created'
+							? 'Chamado criado'
+							: 'Status atualizado'}
+						</span>
+						<span className="text-[10px] text-gray-400">
+						  {new Date(ev.createdAt).toLocaleString('pt-BR')}
+						</span>
+					  </div>
+
+					  {(ev.fromStatus || ev.toStatus) && (
+						<div className="text-[11px] text-gray-600 mt-1">
+						  {ev.fromStatus && (
+							<>
+							  <span className="font-medium">De:</span>{' '}
+							  <span>{ev.fromStatus}</span>
+							</>
+						  )}
+						  {ev.fromStatus && ev.toStatus && <span> &rarr; </span>}
+						  {ev.toStatus && (
+							<>
+							  <span className="font-medium">Para:</span>{' '}
+							  <span>{ev.toStatus}</span>
+							</>
+						  )}
+						</div>
+					  )}
+
+					  {ev.note && ev.note.trim() && (
+						<div className="mt-1 text-[11px] text-gray-500">
+						  {ev.note}
+						</div>
+					  )}
+					</div>
+				  ))}
+			  </div>
+			</div>
+		  </div>
+		)}
     </div>
   );
 };

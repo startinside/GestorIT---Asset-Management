@@ -1,5 +1,6 @@
 import os
-
+from datetime import datetime
+from .general import _api_response, _get_company_id_from_header
 from flask import Blueprint, request, jsonify, current_app, send_from_directory
 from werkzeug.utils import secure_filename
 
@@ -96,31 +97,88 @@ EQUIPMENTS = [
 ]
 
 TICKETS = [
-    {
+    {        
         "id": "tk1",
         "companyId": "c1",
         "equipmentId": "eq2",
         "title": "Computador travando",
         "description": "Máquina reiniciando sozinha várias vezes ao dia.",
-        "kanbanStatus": "Aberto",
+        "kanbanStatus": "Aberto", # Deve corresponder a um nome em KANBAN_COLUMNS
         "priority": "Alta",
         "responsibleId": "u-tenant-1",
         "createdAt": "2025-01-15T10:00:00",
         "dueDate": "2025-01-20T18:00:00",
         "completedAt": None,
-    }
+    },
+    {
+        "id": "tk2",
+        "companyId": "c1",
+        "equipmentId": "eq1",
+        "title": "Configuração de Backup",
+        "description": "Revisar rotina de backup do servidor principal.",
+        "kanbanStatus": "Aberto", # Deve corresponder a um nome em KANBAN_COLUMNS
+        "priority": "Baixa",
+        "responsibleId": "u-tenant-2",
+        "createdAt": "2023-11-01T10:00:00",
+        "dueDate": "2023-11-03T10:00:00",
+        "completedAt": None,
+    },
 ]
 
+# -------------------------------------------------------------------
+# Kanban (colunas configuráveis) + Timeline de chamados
+# -------------------------------------------------------------------
 
-def _api_response(data=None, meta=None, errors=None, status_code=200):
-    return jsonify(
-        {
-            "data": data,
-            "meta": meta or {},
-            "errors": errors,
-        }
-    ), status_code
+# Colunas de Kanban mockadas (uma empresa c1 para começar)
+KANBAN_COLUMNS = [
+    {
+        "id": "kc1",
+        "companyId": "c1",
+        "name": "Aberto",
+        "order": 1,
+        "type": "default",
+        "isSchedulingColumn": False,
+        "scheduleEnabled": False,
+        "slaHours": 24,
+        "color": "#e5e7eb",
+    },
+    {
+        "id": "kc2",
+        "companyId": "c1",
+        "name": "Em execução",
+        "order": 2,
+        "type": "default",
+        "isSchedulingColumn": False,
+        "scheduleEnabled": False,
+        "slaHours": 48,
+        "color": "#dbeafe",
+    },
+    {
+        "id": "kc3",
+        "companyId": "c1",
+        "name": "Aguardando cliente",
+        "order": 3,
+        "type": "default",
+        "isSchedulingColumn": True,
+        "scheduleEnabled": True,
+        "slaHours": 72,
+        "color": "#fef3c7",
+    },
+    {
+        "id": "kc4",
+        "companyId": "c1",
+        "name": "Concluído",
+        "order": 4,
+        "type": "done",
+        "isSchedulingColumn": False,
+        "scheduleEnabled": False,
+        "slaHours": None,
+        "color": "#dcfce7",
+    },
+]
 
+# Eventos de timeline dos chamados
+TICKET_EVENTS: list[dict] = []
 
 def _get_company_id_from_header():
     """
@@ -181,6 +239,45 @@ def create_tenant_user():
 
     TENANT_USERS.append(new_user)
     return _api_response(new_user, status_code=201)
+
+# Procure a seção "Upload de avatar" e adicione o novo endpoint logo abaixo ou em uma seção similar:
+
+# -------------------------------------------------------------------
+# Upload de imagem genérica (para equipamentos, etc.)
+# -------------------------------------------------------------------
+@tenant_bp.post("/upload/image")
+def upload_image():
+    """
+    Recebe um arquivo de imagem e salva em static/images.
+    Retorna uma URL pública para ser usada (e.g., equipment.imageUrls).
+    """
+    if "file" not in request.files:
+        return _api_response(
+            None,
+            errors={"message": "Nenhum arquivo enviado (campo 'file')"},
+            status_code=400,
+        )
+
+    file = request.files["file"]
+    if file.filename == "":
+        return _api_response(
+            None,
+            errors={"message": "Arquivo sem nome"},
+            status_code=400,
+        )
+
+    filename = secure_filename(file.filename)
+    # Garante que as imagens de equipamento vão para uma pasta diferente de avatares
+    upload_folder = os.path.join(current_app.root_path, 'static', 'images')
+    os.makedirs(upload_folder, exist_ok=True) # Cria pasta se não existir
+
+    save_path = os.path.join(upload_folder, filename)
+    file.save(save_path)
+
+    # Simulação da URL pública (ajuste conforme seu servidor estático real)
+    image_url = f"/static/images/{filename}"
+
+    return _api_response({"imageUrl": image_url})
 
 @tenant_bp.patch("/usuarios/<user_id>")
 def update_tenant_user(user_id):
@@ -325,74 +422,296 @@ def delete_equipment(equipment_id):
 
 
 # -------------------------------------------------------------------
+# Chamados: /api/v1/chamados Registra um evento de timeline para um chamado
+# -------------------------------------------------------------------
+def _append_ticket_event(
+    company_id: str,
+    ticket_id: str,
+    event_type: str,
+    from_status: str | None,
+    to_status: str | None,
+    note: str | None = None,
+) -> dict:
+    """Registra um evento de timeline para um chamado."""
+    event = {
+        "id": f"ev{len(TICKET_EVENTS) + 1}",
+        "companyId": company_id,
+        "ticketId": ticket_id,
+        "type": event_type,  # ex: "created", "status_changed"
+        "fromStatus": from_status,
+        "toStatus": to_status,
+        "note": note or "",
+        "createdAt": datetime.utcnow().isoformat() + "Z",
+    }
+    TICKET_EVENTS.append(event)
+    return event
+
+# -------------------------------------------------------------------
 # Chamados: /api/v1/chamados
 # -------------------------------------------------------------------
 @tenant_bp.get("/chamados")
-def list_tickets():
+def list_tenant_tickets():
     company_id = _get_company_id_from_header()
-    items = [t for t in TICKETS if t["companyId"] == company_id]
-    return _api_response(items)
+
+    tickets = [
+        t for t in TICKETS
+        if t.get("companyId") in (None, company_id)
+    ]
+
+    return _api_response(tickets)
 
 # -------------------------------------------------------------------
 # Criar novo chamado: /api/v1/chamados
 # -------------------------------------------------------------------
 @tenant_bp.post("/chamados")
-def create_ticket():
+def create_tenant_ticket():
     company_id = _get_company_id_from_header()
-    payload = request.get_json(silent=True) or {}
+    payload = request.get_json() or {}
 
-    new_id = payload.get("id") or f"tk{len(TICKETS) + 1}"
+    new_id = f"tk{len(TICKETS) + 1}"
+    now = datetime.utcnow().isoformat() + "Z"
 
     ticket = {
         "id": new_id,
         "companyId": company_id,
         "equipmentId": payload.get("equipmentId"),
-        "title": payload.get("title", "Novo chamado"),
-        "description": payload.get("description", ""),
-        "kanbanStatus": payload.get("kanbanStatus", "Aberto"),
-        "priority": payload.get("priority", "Média"),
+        "title": payload.get("title") or "Chamado sem título",
+        "description": payload.get("description") or "",
+        "kanbanStatus": payload.get("kanbanStatus") or "Aberto",
+        "priority": payload.get("priority") or "Normal",
         "responsibleId": payload.get("responsibleId"),
-        "createdAt": payload.get("createdAt"),
-        "dueDate": payload.get("dueDate"),
-        "completedAt": payload.get("completedAt"),
+        "createdAt": now,
+        "updatedAt": now,
     }
 
     TICKETS.append(ticket)
+
+    # Evento inicial da timeline
+    _append_ticket_event(
+        company_id=company_id,
+        ticket_id=new_id,
+        event_type="created",
+        from_status=None,
+        to_status=ticket["kanbanStatus"],
+        note=payload.get("note"),
+    )
+
     return _api_response(ticket, status_code=201)
 
-# -------------------------------------------------------------------
-# Atualizar status Kanban do chamado: /api/v1/chamados/<ticket_id>/kanban
-# -------------------------------------------------------------------
 @tenant_bp.patch("/chamados/<ticket_id>/kanban")
-def update_ticket_kanban(ticket_id):
+def move_tenant_ticket(ticket_id: str):
     company_id = _get_company_id_from_header()
-    payload = request.get_json(silent=True) or {}
-
+    payload = request.get_json() or {}
     new_status = payload.get("kanbanStatus")
+
     if not new_status:
         return _api_response(
             None,
-            errors={"message": "Campo 'kanbanStatus' é obrigatório"},
+            errors={"message": "Campo 'kanbanStatus' é obrigatório."},
             status_code=400,
         )
 
-    for t in TICKETS:
-        if t["id"] == ticket_id and t["companyId"] == company_id:
-            t["kanbanStatus"] = new_status
+    ticket = next(
+        (t for t in TICKETS if t["id"] == ticket_id and t.get("companyId") == company_id),
+        None,
+    )
+    if not ticket:
+        return _api_response(
+            None,
+            errors={"message": "Ticket não encontrado."},
+            status_code=404,
+        )
 
-            # Opcional: atualizar também prioridade/responsável se vierem
-            if "priority" in payload:
-                t["priority"] = payload["priority"]
-            if "responsibleId" in payload:
-                t["responsibleId"] = payload["responsibleId"]
+    old_status = ticket.get("kanbanStatus")
+    ticket["kanbanStatus"] = new_status
+    ticket["updatedAt"] = datetime.utcnow().isoformat() + "Z"
+
+    _append_ticket_event(
+        company_id=company_id,
+        ticket_id=ticket_id,
+        event_type="status_changed",
+        from_status=old_status,
+        to_status=new_status,
+    )
+
+    return _api_response(ticket)
+    
+# -------------------------------------------------------------------
+# Atualizar chamado (campos básicos)
+# -------------------------------------------------------------------
+@tenant_bp.patch("/chamados/<ticket_id>")
+def update_ticket(ticket_id):
+    """
+    Atualiza campos básicos do chamado (título, descrição, prioridade, dueDate, equipmentId, etc).
+
+    Exemplo de payload:
+    {
+      "title": "Novo título",
+      "description": "Descrição atualizada",
+      "priority": "alta",
+      "dueDate": "2025-01-10",
+      "equipmentId": "eq3"
+    }
+    """
+    payload = request.get_json(silent=True) or {}
+
+    allowed_fields = {
+        "title",
+        "description",
+        "priority",
+        "dueDate",
+        "equipmentId",
+        "kanbanStatus",  # se quiser permitir trocar status por aqui também
+    }
+
+    for t in TICKETS:
+        if t["id"] == ticket_id:
+            # estado antigo (para registrar na timeline se quiser)
+            old_status = t.get("kanbanStatus")
+
+            # aplica somente campos permitidos
+            for key, value in payload.items():
+                if key in allowed_fields:
+                    t[key] = value
+
+            # registra um evento genérico na timeline (opcional, mas já deixa pronto)
+            TICKET_EVENTS.append(
+                {
+                    "id": f"ev{len(TICKET_EVENTS) + 1}",
+                    "ticketId": t["id"],
+                    "type": "updated",
+                    "message": "Chamado atualizado",
+                    "oldStatus": old_status,
+                    "newStatus": t.get("kanbanStatus"),
+                    "timestamp": datetime.utcnow().isoformat() + "Z",
+                }
+            )
 
             return _api_response(t)
 
     return _api_response(
         None,
-        errors={"message": "Chamado não encontrado"},
+        errors={"message": "Ticket not found"},
         status_code=404,
     )
+
+@tenant_bp.get("/chamados/<ticket_id>/timeline")
+def get_tenant_ticket_timeline(ticket_id: str):
+    company_id = _get_company_id_from_header()
+
+    events = [
+        e for e in TICKET_EVENTS
+        if e["ticketId"] == ticket_id and e["companyId"] == company_id
+    ]
+    # Ordena por data ascendente
+    events.sort(key=lambda e: e["createdAt"])
+
+    return _api_response(events)
+
+
+# -------------------------------------------------------------------
+# Kanban Columns (CRUD de colunas configuráveis)
+# -------------------------------------------------------------------
+
+@tenant_bp.get("/kanban/colunas")
+def list_kanban_columns():
+    company_id = _get_company_id_from_header()
+    cols = [c for c in KANBAN_COLUMNS if c["companyId"] == company_id]
+    cols.sort(key=lambda c: c.get("order") or 0)
+    return _api_response(cols)
+
+
+@tenant_bp.post("/kanban/colunas")
+def create_kanban_column():
+    company_id = _get_company_id_from_header()
+    payload = request.get_json() or {}
+
+    new_id = f"kc{len(KANBAN_COLUMNS) + 1}"
+    max_order = max(
+        [c.get("order") or 0 for c in KANBAN_COLUMNS if c["companyId"] == company_id]
+        or [0]
+    )
+
+    col = {
+        "id": new_id,
+        "companyId": company_id,
+        "name": payload.get("name") or "Nova coluna",
+        "order": max_order + 1,
+        "type": payload.get("type") or "default",
+        "isSchedulingColumn": bool(payload.get("isSchedulingColumn")),
+        "scheduleEnabled": bool(payload.get("scheduleEnabled")),
+        "slaHours": payload.get("slaHours"),
+        "color": payload.get("color") or "#e5e7eb",
+    }
+
+    KANBAN_COLUMNS.append(col)
+    return _api_response(col, status_code=201)
+
+
+@tenant_bp.patch("/kanban/colunas/<col_id>")
+def update_kanban_column(col_id: str):
+    company_id = _get_company_id_from_header()
+    payload = request.get_json() or {}
+
+    col = next(
+        (c for c in KANBAN_COLUMNS if c["id"] == col_id and c["companyId"] == company_id),
+        None,
+    )
+    if not col:
+        return _api_response(
+            None,
+            errors={"message": "Coluna não encontrada."},
+            status_code=404,
+        )
+
+    for key in ["name", "order", "type", "isSchedulingColumn", "scheduleEnabled", "slaHours", "color"]:
+        if key in payload:
+            col[key] = payload[key]
+
+    return _api_response(col)
+
+
+@tenant_bp.delete("/kanban/colunas/<col_id>")
+def delete_kanban_column(col_id: str):
+    company_id = _get_company_id_from_header()
+
+    idx = next(
+        (i for i, c in enumerate(KANBAN_COLUMNS) if c["id"] == col_id and c["companyId"] == company_id),
+        None,
+    )
+    if idx is None:
+        return _api_response(
+            None,
+            errors={"message": "Coluna não encontrada."},
+            status_code=404,
+        )
+
+    col = KANBAN_COLUMNS.pop(idx)
+    return _api_response(col)
+
+
+@tenant_bp.patch("/kanban/colunas/reorder")
+def reorder_kanban_columns():
+    company_id = _get_company_id_from_header()
+    payload = request.get_json() or {}
+    ordered_ids = payload.get("orderedIds") or []
+
+    if not isinstance(ordered_ids, list):
+        return _api_response(
+            None,
+            errors={"message": "Campo 'orderedIds' deve ser uma lista."},
+            status_code=400,
+        )
+
+    order_map = {col_id: idx + 1 for idx, col_id in enumerate(ordered_ids)}
+
+    for col in KANBAN_COLUMNS:
+        if col["companyId"] == company_id and col["id"] in order_map:
+            col["order"] = order_map[col["id"]]
+
+    cols = [c for c in KANBAN_COLUMNS if c["companyId"] == company_id]
+    cols.sort(key=lambda c: c.get("order") or 0)
+    return _api_response(cols)
 
 # -------------------------------------------------------------------
 # Estados de equipamento: /api/v1/estados_equipamento

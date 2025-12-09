@@ -14,6 +14,7 @@ export interface CompanyLimits {
   users: number;
   branches: number;
   equipments: number;
+  imageUrls: string[]; // Adicionar esta linha
 }
 
 export interface Company {
