@@ -79,6 +79,7 @@ export interface Equipment {
   description?: string;
   acquisitionDate?: string;
   imageUrl?: string;
+  photos?: string[]
 }
 
 export interface MaintenanceTicket {

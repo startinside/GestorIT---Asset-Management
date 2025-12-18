@@ -3,6 +3,7 @@ from datetime import datetime
 from .general import _api_response, _get_company_id_from_header
 from flask import Blueprint, request, jsonify, current_app, send_from_directory
 from werkzeug.utils import secure_filename
+import uuid
 
 tenant_bp = Blueprint("tenant_api", __name__)
 
@@ -69,14 +70,23 @@ EQUIPMENTS = [
         "type": "Notebook",
         "brand": "Dell",
         "model": "Inspiron 15",
+
+        # padrão do seu mock hoje
         "serialNumber": "SN-ABC-123",
+
         "internalId": "NBK-001",
         "patrimonyId": "PAT-1001",
         "statusId": "st1",
         "description": "Notebook do financeiro",
         "acquisitionDate": "2024-01-10",
+
+        # legado (pode manter por enquanto)
         "imageUrl": None,
-        "active": True,  # <-- NOVO
+
+        # ✅ ESSENCIAL pro seu caso
+        "photos": [],
+
+        "active": True,
     },
     {
         "id": "eq2",
@@ -92,9 +102,16 @@ EQUIPMENTS = [
         "description": "Estação de trabalho da recepção",
         "acquisitionDate": "2023-11-05",
         "imageUrl": None,
-        "active": True,  # <-- NOVO
+        "photos": [],
+        "active": True,
     },
 ]
+
+# ✅ Normalização (Saneamento) — FORA da lista
+for eq in EQUIPMENTS:
+    if "photos" not in eq or not isinstance(eq["photos"], list):
+        eq["photos"] = []
+
 
 TICKETS = [
     {        
@@ -248,34 +265,33 @@ def create_tenant_user():
 @tenant_bp.post("/upload/image")
 def upload_image():
     """
-    Recebe um arquivo de imagem e salva em static/images.
-    Retorna uma URL pública para ser usada (e.g., equipment.imageUrls).
+    Upload genérico de imagem (retorna { imageUrl }).
+    Espera multipart/form-data com campo: file
+    Header obrigatório: X-Company-Id
     """
-    if "file" not in request.files:
-        return _api_response(
-            None,
-            errors={"message": "Nenhum arquivo enviado (campo 'file')"},
-            status_code=400,
-        )
+    company_id = _get_company_id_from_header()
+    if not company_id:
+        return _api_response(None, errors={"message": "Missing X-Company-Id"}, status_code=400)
 
-    file = request.files["file"]
-    if file.filename == "":
-        return _api_response(
-            None,
-            errors={"message": "Arquivo sem nome"},
-            status_code=400,
-        )
+    file = request.files.get("file")
+    if not file:
+        return _api_response(None, errors={"message": "Missing file"}, status_code=400)
 
-    filename = secure_filename(file.filename)
-    # Garante que as imagens de equipamento vão para uma pasta diferente de avatares
-    upload_folder = os.path.join(current_app.root_path, 'static', 'images')
-    os.makedirs(upload_folder, exist_ok=True) # Cria pasta se não existir
+    filename = secure_filename(file.filename or "")
+    if filename == "":
+        return _api_response(None, errors={"message": "Invalid filename"}, status_code=400)
 
-    save_path = os.path.join(upload_folder, filename)
+    # Pasta de destino (ajuste se você já tem um padrão)
+    upload_dir = os.path.join("app", "static", "uploads", company_id)
+    os.makedirs(upload_dir, exist_ok=True)
+
+    ext = os.path.splitext(filename)[1].lower() or ".png"
+    new_name = f"{uuid.uuid4().hex}{ext}"
+    save_path = os.path.join(upload_dir, new_name)
     file.save(save_path)
 
-    # Simulação da URL pública (ajuste conforme seu servidor estático real)
-    image_url = f"/static/images/{filename}"
+    # URL pública (Flask serve /static/*)
+    image_url = f"/static/uploads/{company_id}/{new_name}"
 
     return _api_response({"imageUrl": image_url})
 
@@ -337,23 +353,22 @@ def create_equipment():
     company_id = _get_company_id_from_header()
     payload = request.get_json(silent=True) or {}
 
-    new_id = payload.get("id") or f"eq{len(EQUIPMENTS) + 1}"
+    new_id = f"eq{len(EQUIPMENTS)+1}"
 
     equipment = {
         "id": new_id,
         "companyId": company_id,
-        "branchId": payload.get("branchId"),
-        "type": payload.get("type", "Outro"),
-        "brand": payload.get("brand", ""),
-        "model": payload.get("model", ""),
-        "serialNumber": payload.get("serialNumber", ""),
         "internalId": payload.get("internalId") or f"AUTO-{len(EQUIPMENTS)+1}",
-        "patrimonyId": payload.get("patrimonyId", ""),
-        "statusId": payload.get("statusId", None),
-        "description": payload.get("description", ""),
-        "acquisitionDate": payload.get("acquisitionDate", None),
-        "imageUrl": payload.get("imageUrl", None),
-        "active": payload.get("active", True),
+        "type": payload.get("type") or "",
+        "brand": payload.get("brand") or "",
+        "model": payload.get("model") or "",
+        "serial": payload.get("serial") or "",
+        "branchId": payload.get("branchId") or "",
+        "statusId": payload.get("statusId") or "",
+        "description": payload.get("description") or "",
+        "patrimonyId": payload.get("patrimonyId") or "",
+        "acquisitionDate": payload.get("acquisitionDate") or "",
+        "photos": payload.get("photos") or [],  # <<< aqui
     }
 
     EQUIPMENTS.append(equipment)
@@ -367,19 +382,56 @@ def update_equipment(equipment_id):
     company_id = _get_company_id_from_header()
     payload = request.get_json(silent=True) or {}
 
-    for eq in EQUIPMENTS:
-        if eq["id"] == equipment_id and eq["companyId"] == company_id:
-            # Atualiza apenas os campos enviados
-            for key, value in payload.items():
-                if key in eq:
-                    eq[key] = value
-            return _api_response(eq)
+    # 1. Campos permitidos para atualização
+    allowed_fields = {
+        "type", "brand", "model",
+        "serialNumber", "internalId", "branchId", "statusId",
+        "description", "patrimonyId", "acquisitionDate",
+        "photos", "active",
+    }
 
-    return _api_response(
-        None,
-        errors={"message": "Equipamento não encontrado"},
-        status_code=404,
-    )
+    # 2. Busca o equipamento na lista global
+    target_eq = None
+    for eq in EQUIPMENTS:
+        if eq.get("id") == equipment_id and eq.get("companyId") == company_id:
+            target_eq = eq
+            break
+
+    # 3. Se não encontrar, retorna 404 imediatamente
+    if not target_eq:
+        return _api_response(
+            None,
+            errors={"message": "Equipamento não encontrado"},
+            status_code=404,
+        )
+
+    # 4. Processa os dados do payload
+    for key, value in payload.items():
+        if key not in allowed_fields:
+            continue
+
+        # Normalização específica para o campo 'photos'
+        if key == "photos":
+            if value is None:
+                target_eq["photos"] = []
+            elif isinstance(value, list):
+                # Mantém apenas strings válidas e remove espaços
+                target_eq["photos"] = [v for v in value if isinstance(v, str) and v.strip()]
+            else:
+                return _api_response(
+                    None,
+                    errors={"message": "Campo 'photos' deve ser uma lista de URLs."},
+                    status_code=400,
+                )
+        else:
+            # Atualiza os demais campos diretamente
+            target_eq[key] = value
+
+    # 5. Garantia final de estrutura para o campo photos
+    if "photos" not in target_eq or not isinstance(target_eq["photos"], list):
+        target_eq["photos"] = []
+
+    return _api_response(target_eq)
 
 # -------------------------------------------------------------------
 # Suspender ou reativar equipamento: POST /api/v1/equipamentos/<id>/suspender
@@ -403,6 +455,68 @@ def suspend_equipment(equipment_id):
     )
 
 # -------------------------------------------------------------------
+# Estados de equipamento: /api/v1/estados_equipamento
+# -------------------------------------------------------------------
+@tenant_bp.get("/estados_equipamento")
+def list_statuses():
+    company_id = _get_company_id_from_header()
+    items = [
+        s
+        for s in STATUSES
+        if s["companyId"] == company_id or s["companyId"] == "global"
+    ]
+    return _api_response(items)
+
+@tenant_bp.post("/equipamentos/<equipment_id>/duplicar")
+def duplicate_equipment(equipment_id):
+    for e in EQUIPMENTS:
+        if e["id"] == equipment_id:
+            new_item = e.copy()
+            new_item["id"] = f"eq{len(EQUIPMENTS)+1}"
+            new_item["internalId"] = f"DUP-{new_item['internalId']}"
+            EQUIPMENTS.append(new_item)
+            return _api_response(new_item)
+
+    return _api_response(None, errors={"message": "Equipment not found"}, status_code=404)
+
+# garante pasta de uploads
+UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), "..", "..", "static", "equipment_photos")
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+
+@tenant_bp.post("/equipamentos/<equipment_id>/fotos")
+def upload_equipment_photos(equipment_id):
+    company_id = _get_company_id_from_header()
+    if not company_id:
+        return _api_response(None, errors={"message":"Missing X-Company-Id"}, status_code=400)
+
+    files = request.files.getlist("files")
+    if not files:
+        # fallback: se vier "file" em vez de "files"
+        f = request.files.get("file")
+        files = [f] if f else []
+
+    if not files:
+        return _api_response(None, errors={"message":"No files provided"}, status_code=400)
+
+    eq = next((e for e in EQUIPMENTS if e["id"] == equipment_id), None)
+    if not eq:
+        return _api_response(None, errors={"message":"Equipment not found"}, status_code=404)
+
+    eq.setdefault("photos", [])
+
+    uploaded_urls = []
+    for file in files:
+        if not file:
+            continue
+        url = _save_upload_and_get_public_url(file)  # sua função real
+        eq["photos"].append(url)
+        uploaded_urls.append(url)
+
+    return _api_response({"photos": eq["photos"]})
+
+
+# -------------------------------------------------------------------
 # Excluir equipamento: DELETE /api/v1/equipamentos/<id>
 # -------------------------------------------------------------------
 @tenant_bp.delete("/equipamentos/<equipment_id>")
@@ -419,7 +533,6 @@ def delete_equipment(equipment_id):
         errors={"message": "Equipamento não encontrado"},
         status_code=404,
     )
-
 
 # -------------------------------------------------------------------
 # Chamados: /api/v1/chamados Registra um evento de timeline para um chamado
@@ -535,65 +648,65 @@ def move_tenant_ticket(ticket_id: str):
     )
 
     return _api_response(ticket)
-    
+
 # -------------------------------------------------------------------
 # Atualizar chamado (campos básicos)
 # -------------------------------------------------------------------
 @tenant_bp.patch("/chamados/<ticket_id>")
 def update_ticket(ticket_id):
     """
-    Atualiza campos básicos do chamado (título, descrição, prioridade, dueDate, equipmentId, etc).
+    Atualiza um chamado de manutenção (título, descrição, prioridade, dueDate,
+    equipamento vinculado e opcionalmente status).
 
-    Exemplo de payload:
-    {
-      "title": "Novo título",
-      "description": "Descrição atualizada",
-      "priority": "alta",
-      "dueDate": "2025-01-10",
-      "equipmentId": "eq3"
-    }
+    Se o status mudar, registra um evento na timeline.
     """
-    payload = request.get_json(silent=True) or {}
+    company_id = _get_company_id_from_header()
+    if not company_id:
+        return _api_response(
+            None,
+            errors={"message": "Missing X-Company-Id header"},
+            status_code=400,
+        )
 
-    allowed_fields = {
-        "title",
-        "description",
-        "priority",
-        "dueDate",
-        "equipmentId",
-        "kanbanStatus",  # se quiser permitir trocar status por aqui também
-    }
+    payload = request.get_json() or {}
 
-    for t in TICKETS:
-        if t["id"] == ticket_id:
-            # estado antigo (para registrar na timeline se quiser)
-            old_status = t.get("kanbanStatus")
+    ticket = None
+    for t in MAINTENANCE_TICKETS:
+        if t["id"] == ticket_id and t["companyId"] == company_id:
+            ticket = t
+            break
 
-            # aplica somente campos permitidos
-            for key, value in payload.items():
-                if key in allowed_fields:
-                    t[key] = value
+    if not ticket:
+        return _api_response(
+            None,
+            errors={"message": "Ticket not found"},
+            status_code=404,
+        )
 
-            # registra um evento genérico na timeline (opcional, mas já deixa pronto)
-            TICKET_EVENTS.append(
-                {
-                    "id": f"ev{len(TICKET_EVENTS) + 1}",
-                    "ticketId": t["id"],
-                    "type": "updated",
-                    "message": "Chamado atualizado",
-                    "oldStatus": old_status,
-                    "newStatus": t.get("kanbanStatus"),
-                    "timestamp": datetime.utcnow().isoformat() + "Z",
-                }
-            )
+    old_status = ticket.get("status")
 
-            return _api_response(t)
+    # Campos básicos
+    for field in ["title", "description", "priority", "dueDate", "equipmentId"]:
+        if field in payload:
+            ticket[field] = payload[field]
 
-    return _api_response(
-        None,
-        errors={"message": "Ticket not found"},
-        status_code=404,
-    )
+    # Status opcional, com registro em timeline
+    if "status" in payload and payload["status"] != old_status:
+        ticket["status"] = payload["status"]
+
+        event = {
+            "id": f"ev{len(TICKET_EVENTS) + 1}",
+            "ticketId": ticket_id,
+            "companyId": company_id,
+            "type": "status_change",
+            "fromStatus": old_status,
+            "toStatus": payload["status"],
+            "note": payload.get("note", ""),
+            "createdAt": datetime.utcnow().isoformat() + "Z",
+        }
+        TICKET_EVENTS.append(event)
+
+    return _api_response(ticket)
 
 @tenant_bp.get("/chamados/<ticket_id>/timeline")
 def get_tenant_ticket_timeline(ticket_id: str):
@@ -607,7 +720,6 @@ def get_tenant_ticket_timeline(ticket_id: str):
     events.sort(key=lambda e: e["createdAt"])
 
     return _api_response(events)
-
 
 # -------------------------------------------------------------------
 # Kanban Columns (CRUD de colunas configuráveis)
@@ -712,32 +824,6 @@ def reorder_kanban_columns():
     cols = [c for c in KANBAN_COLUMNS if c["companyId"] == company_id]
     cols.sort(key=lambda c: c.get("order") or 0)
     return _api_response(cols)
-
-# -------------------------------------------------------------------
-# Estados de equipamento: /api/v1/estados_equipamento
-# -------------------------------------------------------------------
-@tenant_bp.get("/estados_equipamento")
-def list_statuses():
-    company_id = _get_company_id_from_header()
-    items = [
-        s
-        for s in STATUSES
-        if s["companyId"] == company_id or s["companyId"] == "global"
-    ]
-    return _api_response(items)
-
-@tenant_bp.post("/equipamentos/<equipment_id>/duplicar")
-def duplicate_equipment(equipment_id):
-    for e in EQUIPMENTS:
-        if e["id"] == equipment_id:
-            new_item = e.copy()
-            new_item["id"] = f"eq{len(EQUIPMENTS)+1}"
-            new_item["internalId"] = f"DUP-{new_item['internalId']}"
-            EQUIPMENTS.append(new_item)
-            return _api_response(new_item)
-
-    return _api_response(None, errors={"message": "Equipment not found"}, status_code=404)
-
 
 # -------------------------------------------------------------------
 # Filiais: /api/v1/filiais

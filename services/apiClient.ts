@@ -1,47 +1,42 @@
 import axios from 'axios';
 
-// Usa variável de ambiente VITE_API_URL ou fallback para o backend local
-const API_URL =
-  import.meta.env?.VITE_API_URL || 'http://localhost:5000/api';
-
 const apiClient = axios.create({
-  baseURL: API_URL,
-  headers: {
-    'Content-Type': 'application/json',
-  },
+	baseURL: '/api', // proxy do Vite resolve backend
+	headers: {
+		'Content-Type': 'application/json',
+	},
 });
 
-// Interceptor de request: adiciona token JWT, se existir
+// ==============================
+// Request Interceptor
+// ==============================
 apiClient.interceptors.request.use(
-  (config) => {
-    const token = localStorage.getItem('gestorit_token');
-    if (token) {
-      config.headers = config.headers || {};
-      config.headers['Authorization'] = `Bearer ${token}`;
-    }
-    return config;
-  },
-  (error) => Promise.reject(error)
+	(config) => {
+		const token = localStorage.getItem('gestorit_token');
+		if (token) {
+			config.headers = config.headers || {};
+			config.headers.Authorization = `Bearer ${token}`;
+		}
+		return config;
+	},
+	(error) => Promise.reject(error)
 );
 
-// Interceptor de response: trata erros globais simples
+// ==============================
+// Response Interceptor
+// ==============================
 apiClient.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    const status = error.response ? error.response.status : null;
+	(response) => response,
+	(error) => {
+		const status = error?.response?.status;
 
-    if (status === 401) {
-      console.warn('Unauthorized access - redirecting to login...');
-      localStorage.removeItem('gestorit_token');
-      // Opcional: window.location.href = '/login';
-    } else if (status === 403) {
-      console.warn('Forbidden access - insufficient permissions.');
-    } else if (status && status >= 500) {
-      console.error('Server error:', error.message);
-    }
+		if (status === 401) {
+			localStorage.removeItem('gestorit_token');
+			console.warn('Unauthorized – token removido');
+		}
 
-    return Promise.reject(error);
-  }
+		return Promise.reject(error);
+	}
 );
 
 export default apiClient;
