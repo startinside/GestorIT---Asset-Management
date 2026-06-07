@@ -7,6 +7,18 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+secrets/
+credentials/
+
 node_modules
 dist
 dist-ssr
@@ -36,3 +48,6 @@ package-lock.json
 dist/
 dist-ssr/
 build/
+
+# Runtime/user uploads
+backend/app/static/uploads/
